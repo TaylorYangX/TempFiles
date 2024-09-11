@@ -10,6 +10,7 @@
 BIOS发布日期           09/18/2023
 BIOS制造商             Dell Inc.
 BIOS版本               戴尔Inc.1.27.0
+https://www.dell.com/support/manuals/en-us/optiplex-7050-desktop/optiplex_7050_mt_om/system-board-layout?guid=guid-41f59f38-621c-4670-b823-4dd9600900e7&lang=en-us
 
 
 内存：32 GB ( 未知 DDR4 2400MHz 8GB / 海力士 DDR4 2400MHz 8GB / 海力士 DDR4 2666MHz 8GB x 2 )
