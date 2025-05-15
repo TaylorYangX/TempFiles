@@ -1,0 +1,113 @@
+Scan flip-flops (SFFs) or more generally on-chip registers configured as part of the Design-
+For-Test (DFT) scan chain. They are inserted to enable full controllability and observability
+of sequential elements during manufacturing test.
+
+In test mode the normal D-input is multiplexed to the scan path, so each flip-flop’s content
+is serially shifted to SO, exposing the entire internal state clock-by-clock.
+
+
+The counter is a monotonically increasing sequence number scoped to each
+communication session.
+Receiver state: stores the highest counter value seen from each sender.
+Check: If a new packet’s counter ≤ stored value, the packet is discarded as a replay;
+otherwise it is accepted and the stored value is updated.
+Because a valid MAC is computed over the counter, an attacker cannot change the counter
+without invalidating the MAC, so replayed frames are detected and dropped.
+
+Latency & CPU limits: Lightweight MAC (e.g., Chaskey-12) executes in microseconds on
+small MCUs, whereas encryption adds heavier computation and potential real-time jitter.
+Clear-text diagnostics: Operators still see the unencrypted register values for
+troubleshooting, while integrity and authenticity are preserved—meeting security goals
+with minimal operational disruption.
+
+
+
+Step 1: Non-Critical Request: Master sends a non-critical ASDU (e.g., Read with function
+code 0x01). Outstation processes it normally since authentication is not required for non-
+critical data.
+Step 2: Standard Response: Outstation returns a Standard Response to the Master for the
+non-critical request.
+Step 3: Critical Command: Master sends a critical ASDU (e.g., Write with function code
+0x02) that could change system state. This triggers the secure authentication process.
+Step 4: Challenge Issued: Outstation sends Challenge data (function code 0x83)
+containing parameters (like nonce, session key info, etc.) to verify the Master’s identity.
+Step 5: Authentication Response (HMAC): Master calculates an HMAC using the session
+key and sends it back along with the original request data.
+Step 6: Validation and Command Execution: Outstation verifies the HMAC by computing
+its own and comparing it with the received one. If they match: Authentication Pass. The
+command is processed, and a Standard Response is returned.
+Unsuccessful Authentication Operation
+Step 1  Step 5: Same as Successful Authentication Operation
+Step 6: Validation Failed – Command Rejected
+•
+Outstation computes its own HMAC and compares it to the received one. If
+mismatch (due to wrong key, tampered data, etc.): Authentication Failed. Outstation
+sends Standard Response (Error) and does not execute the command.
+
+
+
+Successful Authentication
+Step 1: Master sends Non-Critical ASDU (Read 0x01) → no authentication needed.
+Step 2: Outstation returns a Standard Response.
+Step 3: Master sends a combined Aggressive Mode Request (Critical ASDU + HMAC tag).
+o HMAC is pre-computed using info from prior Non-Aggressive challenge
+exchange.
+Step 4: Outstation validates HMAC → if valid: Authentication Pass. It processes the ASDU
+and sends Standard Response.
+Unsuccessful Authentication (Right Diagram)
+Step 1  Step 3: same
+Step 4: If HMAC verification fails (e.g., bad key, KSn mismatch), Authentication Fails.
+Outstation sends Error Response and does not execute the critical ASDU.
+
+
+The VMD is a standardized, virtual representation of the physical server device’s
+capabilities and data (e.g., variables, programs). It hides hardware-specific details, so MMS
+clients can access any compliant server through uniform MMS services without knowing
+the device’s internal architecture. This abstraction enables interoperability and simplifies
+client development.
+
+
+
+We have an IoT Device, specifically a smart lock, acting as an MQTT Client (Client-A). On
+the right, we have a mobile application that also functions as an MQTT client (Client-B), A
+user would utilize this to control the lock. Essential component, the MQTT Broker, is at the
+center. The Broker serves as a central message hub.
+1. Steps 1 (Both sides): The smart lock (Client-A) and the mobile application (Client-B)
+establish a connection to the MQTT Broker. They are identified by unique Client IDs
+that establish communication links.
+2. Steps 2 (Both sides): Both clients inform the Broker of their interests by subscribing
+to specific 'topics' after connecting. In this situation, both subscribe to the topic
+lock/cmd. This signifies they want to receive all messages published to this
+'command' topic. The mobile app is expected to subscribe to lock/status (not
+explicitly shown in step 2 for the app but implied by step 6) to receive status updates
+from the lock.
+3. Step 3: The user engages with the Mobile Application (Client-B) and selects 'Open'.
+The app then publishes an 'Open' message to the topic lock/cmd. This message is
+forwarded to the Broker, rather than sent directly to the lock.
+4. Step 4: The MQTT Broker receives the 'Open' message on the lock/cmd topic. It
+reviews the list of subscribers related to this topic and confirms that the IoT Device
+(Client-A) is subscribed. The Broker subsequently sends the 'Open' message to the
+smart lock.
+5. Step 5: The Smart Lock (Client-A) receives the 'Open' command. It unlocks the door
+and then publishes a status update message, 'unlocked', to the lock/status topic.
+This status message is then sent to the Broker.
+
+
+
+Automotive Ethernet (AE) revolutionizes in-vehicle networking by overcoming the
+limitations of traditional protocols like CAN and LIN.
+Firstly, AE offers vastly superior bandwidth (100 Mbps to Gbps+) at the Physical and Data
+Link layers compared to the kilobit to low-megabit rates of older buses, enabling data-
+intensive applications like ADAS, high-resolution displays, and rapid OTA updates.
+Secondly, AE embraces the standardized TCP/IP suite for its Network and Transport layers,
+bringing universal addressing, interoperability, and paving the way for service-oriented
+architectures (SOA) with middleware like SOME/IP; this contrasts sharply with the often
+proprietary or limited networking capabilities of traditional systems.
+Thirdly, AE integrates advanced functionalities such as Time-Sensitive Networking (TSN)
+for deterministic, low-latency communication crucial for critical control systems and
+synchronized media (replacing needs previously met by specialized buses like FlexRay or
+MOST), alongside protocols like DoIP for faster diagnostics.
+These differences provide AE with concrete advantages in terms of performance,
+scalability, standardization, and the ability to support sophisticated, software-defined
+vehicle features.
+
