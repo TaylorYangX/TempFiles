@@ -1,0 +1,34 @@
+1
+What is Side Channel Attack?
+Side Channel Attack: A security exploit that uses information from a physical system to gain access to a system’s
+program execution or functionality.
+2
+What are the common sources of Side Channel for Side Channel Attack?
+• Measurable physical features
+• Power consumption or current
+• Timing or delay
+• Electromagnetic radiation
+• Optical
+• Acoustic
+• Output signals
+3
+What Is Modbus/TCP?
+• An industrial protocol encapsulating the Modbus application layer inside TCP/IP
+• Widely adopted for SCADA and PLC communication
+4
+What is Distributed Network Protocol 3 (DNP3)?
+• DNP3 stands for Distributed Network Protocol version 3.
+• Open standard protocol for SCADA and remote systems.
+• Promotes interoperability across vendors.
+• Common in Electric Utilities, Water, Oil, and Gas sectors.
+5
+What is Manufacturing Message Specification (MMS)?
+An application-layer protocol for exchanging real-time data and supervisory control information between net-
+worked industrial devices/applications.
+6
+What is MQTT (Message Queuing Telemetry Transport)?
+MQTT (Message Queuing Telemetry Transport) is a lightweight communication protocol designed specifically for
+resource-constrained IoT devices. It uses a publish/subscribe model, which allows for efficient and scalable message
+exchange. MQTT is known for its low power consumption, minimal bandwidth usage, and reliable message delivery
+through three levels of Quality of Service (QoS 0, 1, and 2). Due to its simplicity and efficiency, it is a suitable alternative
+to traditional protocols like HTTP in IoT environments.
