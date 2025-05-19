@@ -7,11 +7,12 @@
 #include <netinet/ip.h>
 #include <stdlib.h>
 
-struct udpheader {
-	u_int16_t udp_sport;
-	u_int16_t udp_dport;
-	u_int16_t udp_ulen;
-	u_int16_t udp_sum;
+struct icmpheader {
+	unsigned char icmp_type;
+	unsigned char icmp_code;
+	unsigned short int icmp_chksum;
+	unsigned short int icmp_id;
+	unsigned short int icmp_seq;
 };
 struct ipheader {
 	unsigned char iph_ihl:4, iph_ver:4;
@@ -46,30 +47,42 @@ void send_raw_ip_packet (struct ipheader *ip) {
 		perror("sendto() error"); exit(-1);
 	}
 }
-
+unsigned short in_chksum(unsigned short *buf, int length) {
+	unsigned short *w = buf;
+	int nleft = length;
+	int sum = 0;
+	unsigned short temp = 0;
+	while(nleft > 1) {
+		sum+= *w++;
+		nleft -=2;
+	}
+	if (nleft == 1) {
+		*(u_char *)(&temp) = *(u_char *)w;
+		sum+=temp;
+	}
+	sum = (sum >> 16) + (sum & 0xffff);
+	sum += (sum>>16);
+	return (unsigned short)(~sum);
+}
 int main() {
 	char buffer[1500];
 	memset(buffer, 0, 1500);
 	struct ipheader *ip = (struct ipheader *) buffer;
-	struct udpheader *udp = (struct udpheader *) (buffer + sizeof(struct ipheader));
-	// Filling in UDP Data field
-	char *data = buffer + sizeof(struct ipheader) + sizeof(struct udpheader);
-	const char *msg="Hello Server!\n";
-	int data_len = strlen(msg);
-	strncpy(data, msg, data_len);
-	// Fill in the UDP header
-	udp->udp_sport = htons(12345);
-	udp->udp_dport = htons(9090);
-	udp->udp_ulen = htons(sizeof(struct udpheader) + data_len);
-	udp->udp_sum = 0;
+	struct icmpheader *icmp = (struct icmpheader *) (buffer + sizeof(struct ipheader));
+	// Fill in the ICMP header
+	icmp->icmp_type=8;
+	icmp->icmp_chksum=0;
+	icmp->icmp_chksum = in_chksum((unsigned short *)icmp, sizeof(struct ipheader));
+
 	// Fill in the IP header
 	ip->iph_ver = 4;
 	ip->iph_ihl = 5;
 	ip->iph_ttl = 20;
-	ip->iph_sourceip.s_addr = inet_addr("1.2.3.4");
-	ip->iph_destip.s_addr = inet_addr("10.0.2.8");
-	ip->iph_protocol = IPPROTO_UDP;
-	ip->iph_len=htons(sizeof(struct ipheader)+sizeof(struct udpheader) + data_len);
+	ip->iph_sourceip.s_addr = inet_addr("10.0.2.8");
+	ip->iph_destip.s_addr = inet_addr("8.8.8.8");
+	ip->iph_protocol = IPPROTO_ICMP;
+	ip -> iph_len = htons(1000);
+	// ip->iph_len=htons(sizeof(struct ipheader)+sizeof(struct icmpheader));
 	// Send the spoofed packet
 	send_raw_ip_packet(ip);
 	return 0;
