@@ -7,3 +7,81 @@ sudo curl -fsSLo /etc/apt/sources.list.d/brave-browser-release.sources https://b
 sudo apt update
 
 sudo apt install brave-browser
+
+
+
+https://drive.google.com/drive/folders/1hVo07TQt6lgK-a_b1OqIUZuYp4QSNlUM
+
+
+import torchao
+import copy
+
+
+from torchao.quantization.GPTQ import Int4WeightOnlyGPTQQuantizer
+from torchao.quantization import quantize_,int8_dynamic_activation_int8_weight, int4_weight_only
+from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+from torchao.quantization import int8_dynamic_activation_int4_weight,int8_dynamic_activation_int8_semi_sparse_weight
+from torchao.quantization import quantize_, int4_weight_only
+precision = torch.float32
+group_size = 128
+
+# you can enable [hqq](https://ithub.com/mobiusml/hqq/tree/master) quantization which is expected to improves accuracy through
+# use_hqq flag for `int4_weight_only` quantization
+# use_hqq = False
+# quantize_(new_model, int4_weight_only(group_size=group_size, use_hqq=use_hqq))
+## 会出错ValueError: Expected Tensor argument scales to have dtype torch.bfloat16, but got torch.float32 instead.
+
+
+
+from torchao.quantization import quantize_, int8_weight_only
+quantize_(new_model, int8_weight_only())
+# 可行
+
+
+# from torchao.quantization import quantize_, int8_dynamic_activation_int8_weight
+# quantize_(new_model, int8_dynamic_activation_int8_weight())
+# 可行
+
+
+# from torchao.quantization import int8_dynamic_activation_int4_weight
+# quantize_(new_model, int8_dynamic_activation_int4_weight())
+## 可行
+
+
+# from torchao.quantization import int8_dynamic_activation_int8_semi_sparse_weight
+# quantize_(new_model, int8_dynamic_activation_int8_semi_sparse_weight())
+# 会出错
+
+
+# from torchao.quantization import quantize_, float8_dynamic_activation_float8_weight
+# from torchao.quantization.observer import PerTensor
+# quantize_(new_model, float8_dynamic_activation_float8_weight(granularity=PerTensor()))
+## 会出错
+
+
+# from torchao.quantization import quantize_, fpx_weight_only
+# quantize_(new_model, fpx_weight_only(3, 2))
+## 会出错
+
+
+
+
+
+
+from torchao.utils import unwrap_tensor_subclass
+m_unwrapped = unwrap_tensor_subclass(new_model)
+
+
+sample_inputs = (torch.randn(1, 100, 51, dtype=precision), )
+
+
+from torch._export import capture_pre_autograd_graph
+from torch.export import export, ExportedProgram
+from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
+# default way
+exported_program: ExportedProgram = export(m_unwrapped, sample_inputs)
+edge: EdgeProgramManager = to_edge(exported_program)
+executorch_program = edge.to_executorch()
+
+with open("int8_dynamic_activation_int4_weight.pte", "wb") as file:
+    file.write(executorch_program.buffer)
