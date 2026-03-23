@@ -16,6 +16,7 @@ https://drive.google.com/drive/folders/1hVo07TQt6lgK-a_b1OqIUZuYp4QSNlUM
 import torchao
 import copy
 
+new_model.load_state_dict(torch.load('modified_model.pth', map_location=torch.device('cpu')))
 
 from torchao.quantization.GPTQ import Int4WeightOnlyGPTQQuantizer
 from torchao.quantization import quantize_,int8_dynamic_activation_int8_weight, int4_weight_only
