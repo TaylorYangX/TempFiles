@@ -1,0 +1,1046 @@
+%\documentclass[a4paper,fleqn]{cas-dc}
+\documentclass[pdflatex,sn-mathphys-num]{sn-jnl}% Math and Physical Sciences Numbered Reference Style
+\usepackage[numbers]{natbib}
+\usepackage[ruled,vlined]{algorithm2e}
+\usepackage{float}   % for [H]
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{pifont}
+\usepackage{amssymb}
+\usepackage{textcomp,mathcomp}
+\usepackage{gensymb}
+\usepackage{mathrsfs}
+\usepackage{subfigure}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{makecell}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{enumitem}
+\usepackage{makecell}
+\usepackage{subcaption}
+\usepackage{mdframed}
+\usepackage[svgnames]{xcolor} 
+
+\captionsetup[subfigure]{font=scriptsize} 
+
+
+\definecolor{PromptBG}{HTML}{F3F7FC}    
+\definecolor{PromptBorder}{HTML}{1F3A5F}
+\definecolor{Bracket}{HTML}{0F2747}     
+
+
+\newcommand{\eewadHeight}{4.27cm}
+\newcommand{\eewadWidth}{1.87cm}
+\newcommand{\edeesixgap}{0.01cm}
+
+
+\def\tsc#1{\csdef{#1}{\textsc{\lowercase{#1}}\xspace}}
+\tsc{WGM}
+\tsc{QE}
+\tsc{EP}
+\tsc{PMS}
+\tsc{BEC}
+\tsc{DE}
+
+\theoremstyle{thmstyleone}
+\newtheorem{theorem}{Theorem}
+
+\newtheorem{proposition}[theorem]{Proposition} 
+
+
+\theoremstyle{thmstyletwo}%
+\newtheorem{example}{Example}%
+\newtheorem{remark}{Remark}%
+
+\theoremstyle{thmstylethree}%
+\newtheorem{definition}{Definition}%
+
+\raggedbottom
+
+\begin{document}
+
+\title[Article Title]{Cloud-Edge Collaborative Anomaly Behavior Analysis for Cyber-Physical Systems}
+
+\author[1]{\fnm{Zhanglong} \sur{Yang}}\email{zhanglong.yang@und.edu}
+
+\author[1]{\fnm{Qinxuan} \sur{Shi}}\email{qinxuan.shi@und.edu}
+\equalcont{These authors contributed equally to this work.}
+
+\author*[1]{\fnm{Sicong} \sur{Shao}}\email{sicong.shao@und.edu}
+\equalcont{These authors contributed equally to this work.}
+
+\affil*[1]{\orgdiv{School of Electrical Engineering and Computer Science}, \orgname{University of North Dakota}, \orgaddress{\city{Grand Forks}, \postcode{58202}, \state{ND}, \country{USA}}}
+
+\abstract{
+The convergence of legacy industrial infrastructure with modern networking has substantially enlarged the attack surface of cyber-physical systems (CPS), exposing vulnerabilities that traditional defenses cannot adequately address. Device heterogeneity further complicates deployment, since deep models impose prohibitive costs on resource-constrained nodes, while lightweight models sacrifice accuracy for efficiency.
+We propose BAIC-AT, a bagged ensemble of Akaike Information Criterion--Anomaly Transformer (AIC-AT) detectors. Each AIC-AT extends the Anomaly Transformer by fitting a Gaussian Mixture Model (GMM) to anomaly scores via Expectation-Maximization and selecting the number of mixture components using the Akaike Information Criterion, thereby eliminating manual threshold tuning. A quantized variant, Q\_BAIC-AT, optimized with TorchAO and ExecuTorch, enables low-latency inference on edge hardware. A Mahalanobis distance-based routing policy forwards only uncertain samples to the cloud, reducing communication overhead while preserving detection fidelity. An integrated retrieval-augmented generation investigation module with tiered large language models supports automated anomaly diagnosis.
+These components are unified in Cloud-Edge Collaborative CPS Anomaly Detection (CE-CPS), a holistic architecture that coordinates detection and investigation across cloud and edge tiers. We further introduce Green Water System Anomaly Detection Evaluation (Green-WSADE), an evaluation framework that jointly measures detection performance and resource consumption. Experiments on the Secure Water Treatment (SWaT) and Water Distribution (WADI) datasets demonstrate $F_1$ scores of 99.96\% and 99.75\%, respectively, outperforming strong baselines while maintaining low resource usage.
+Overall, this work contributes to artificial intelligence research through the novel AIC-AT detector, the bagged ensemble strategy, and the cloud-edge routing method, while demonstrating their engineering application in securing real-world water CPS.
+}
+
+\keywords{Anomaly Detection, Cyber-Physical System, Cloud, Edge, Retrieval-Augmented Generation}
+
+
+\maketitle
+
+\section{Introduction}
+Cyber-physical systems (CPSs) tightly couple computation, communication, and physical processes, underpinning critical infrastructures such as power grids, healthcare facilities, and transportation networks. Water CPSs are particularly vital to daily life and public safety~\cite{chowdhury2025cyber}. Despite substantial progress under the Industry~4.0 paradigm, CPS components have become increasingly complex and heterogeneous---spanning sensors and actuators to programmable logic controllers (PLCs)---which enlarges the attack surface and introduces new exploitable vulnerabilities~\cite{kayan2022cybersecurity}. Consequently, water CPSs are especially susceptible to intrusions and targeted attacks that can disrupt normal operations~\cite{almazyad2023anomaly}. These risks highlight an urgent need for effective anomaly detection methods that can promptly flag abnormal behaviors caused by faults or malicious actions, thereby safeguarding the security, resilience, and reliability of water CPSs~\cite{gulzar2024analytical}.
+
+Traditional detection approaches, including manual inspection~\cite{gulzar2024analytical}, rule-based strategies~\cite{punal2002expert}, and invariant checking~\cite{adepu2016using}, are increasingly inadequate for modern large-scale CPS deployments because they struggle to cope with high-dimensional and dynamically evolving monitoring streams. In contrast, deep learning methods can capture complex temporal dependencies and adapt to heterogeneous sensor modalities, enabling more accurate anomaly detection. Recent models have reported strong performance on public water CPS benchmarks~\cite{audibert2020usad,tuli2022tranad}. However, these approaches are often computationally intensive, which hinders their direct deployment on resource-constrained edge devices.
+
+Edge intelligence increasingly pushes inference closer to sensors and actuators to satisfy stringent requirements on latency, privacy, and availability. Meanwhile, embedded platforms impose tight budgets on power, memory, bandwidth, and silicon area. Recent edge-oriented CNN and RNN studies further suggest that practical on-device inference often hinges on algorithm-hardware co-optimization rather than model architecture alone. For instance, COMET combines offset-binary encoding with lookup-table-based operations to jointly improve CNN inference accuracy and FPGA resource efficiency~\cite{chen2025comet}, whereas digit-serial distributed arithmetic together with fixed-point training enables efficient LSTM architectures tailored to embedded settings~\cite{khan2024digit,alhartomi2023low}. Collectively, these results indicate that edge deployment is inherently a system-level co-design problem spanning numerical representations, compute primitives, model structures, and hardware mapping.
+From this co-design perspective, Transformer-based solutions have become increasingly relevant for edge deployments, as self-attention offers a unified mechanism to capture long-range dependencies and global context across heterogeneous sequences and even multimodal streams. However, standard Transformers are typically difficult to run on resource-constrained devices due to heavy matrix-multiplication and attention workloads, a substantial activation-memory footprint, and the quadratic memory scaling of full self-attention with sequence length~\cite{saha2025vit_edge}.
+Consequently, edge-ready Transformers must combine architectural efficiency with hardware awareness---including efficient attention variants, structured pruning, low-bit quantization, and software-stack optimizations---to preserve accuracy under real-time latency and energy budgets, achieving practicality comparable to prior edge-optimized CNN and RNN designs~\cite{chen2025comet,khan2024digit,alhartomi2023low}.
+
+Meanwhile, the rapid evolution of CPS has driven many water utilities to deploy edge devices for distributed data processing. Running anomaly detection close to data sources reduces latency, lowers bandwidth consumption compared with cloud-only pipelines, and improves privacy by limiting exposure of raw telemetry. In practice, edge nodes in IoT-enabled water facilities continuously ingest rich telemetry from flow meters, pressure and water-quality sensors, valve controllers, and pumping stations. This trend creates a fundamental cloud--edge dilemma: cloud analytics offers higher-capacity detection but requires continuous data transmission and centralized processing; edge analytics enables fast, privacy-preserving monitoring but must operate under strict compute and memory constraints. Consequently, a practical CPS must determine where each inference is performed, in addition to designing how the data are modeled. Our study is motivated by five challenges in water CPS:
+(1) Water CPS handles highly sensitive operational data, and failures in anomaly detection can directly translate into severe safety risks. Most non-learning approaches rely on simple rules or threshold-based heuristics and are therefore prone to false alarms, while conventional machine learning methods often struggle to capture the complex temporal patterns present in industrial control time series~\cite{inoue2017anomaly,mathur2016swat}. These limitations motivate the need for anomaly detection techniques that are more accurate, reliable, and tailored to water CPS.
+(2) Many existing anomaly detection methods depend on supervised learning, which requires large, manually labeled datasets containing representative examples of both normal and abnormal behaviors~\cite{dehlaghi2023anomaly}. In operational water CPS, however, genuine attacks and critical fault events are rare, making it difficult to collect sufficient labeled anomalies; as a result, fully supervised approaches are often impractical in this domain~\cite{chalapathy2019deep}.
+(3) Water infrastructure deployments frequently demand on-device anomaly detection to protect sensitive telemetry and meet real-time requirements. However, conventional deep models cannot be deployed on resource-constrained hardware without severe accuracy degradation, and cloud-only pipelines introduce prohibitive communication overhead, privacy risks, and latency. Despite its practical urgency, this cloud--edge trade-off remains largely unaddressed in the water CPS security literature. Importantly, within a single system stream, most windows can be classified reliably on the edge, while a small fraction near the decision boundary can benefit disproportionately from higher-capacity cloud inference. Effective cloud--edge systems should explicitly exploit this heterogeneity in sample difficulty.
+(4) For water CPS, anomaly detection alone is not sufficient. Once an alert is raised, operators still need timely and reliable diagnostic support to interpret plausible root causes and select appropriate protective actions, thereby preventing service disruption and water-quality risks. This requirement further intensifies the cloud--edge dilemma: rich, context-aware analysis in the cloud can improve investigative capability but increases latency, communication cost, and data-leakage risk; in contrast, edge-side analysis reduces latency and preserves privacy but is constrained by limited compute and memory resources. To mitigate staffing constraints, stronger cloud--edge analytical support is needed to transform raw alerts into timely, actionable investigation and response workflows~\cite{amin2013water_scada,cook2022anomaly_diagnosis}.
+(5) At present, there is no widely adopted framework that jointly evaluates anomaly detectors across heterogeneous deployment settings using practical cost metrics such as energy consumption, memory usage, and model size, making fair comparison difficult. The Green AI~\cite{efficiency_framework} literature explicitly calls for reporting efficiency alongside accuracy and offers concrete guidance and indicators for energy and emission accounting, which motivates us to develop a unified, deployment-aware evaluation protocol for anomaly detection in water CPS.
+
+To address the above interrelated challenges, we propose CE-CPS, a cloud-edge collaborative architecture for unsupervised anomaly detection in which the edge selectively transfers uncertain samples to the cloud for more accurate classification.
+CE-CPS deploys the BAIC-AT ensemble in the cloud and introduces an edge-ready Q\_BAIC-AT model optimized for resource-constrained devices. These two tiers are coordinated by a novel selective query routing strategy that integrates selective offloading into the inference pipeline.
+CE-CPS directly addresses the inherent dilemma in cloud-edge collaboration: the edge tier efficiently processes system data with low latency and minimal communication, while the cloud tier is dedicated to handling ambiguous and difficult-to-classify windows, precisely the scenarios where greater model capacity yields the most substantial gains in detection accuracy.
+Our work provides direct responses to the identified challenges through the following contributions:
+\begin{itemize}
+    \item \textbf{Cloud-edge collaborative anomaly detection for water CPS.}
+    We propose CE-CPS, a holistic cloud-edge collaborative architecture for unsupervised anomaly detection in multivariate water CPS telemetry. A Mahalanobis distance-based routing policy selectively offloads only uncertain samples from resource-constrained edge devices to the cloud, balancing detection performance and computational consumption.
+    \item  \textbf{Automatic, data-driven thresholding via AIC-AT.}
+    To remove manual threshold calibration and improve robustness across heterogeneous devices and operating conditions, we propose AIC-AT, which extends the original Anomaly Transformer (AT). AIC-AT replaces AT's K-Means gap-statistic thresholding with a GMM fitted to anomaly scores via EM and uses AIC to select the number of mixture components, enabling principled threshold selection without manual tuning.
+    \item \textbf{Improved robustness via bagging: BAIC-AT.}
+    To enhance generalization and stability, we propose BAIC-AT, a bagged ensemble of AIC-AT detectors trained on bootstrap-resampled subsets with diversified training hyperparameters, yielding more consistent alarms and improved reliability.
+    \item \textbf{Edge-based deployment with Q\_BAIC-AT and selective offloading.}
+    We construct Q\_BAIC-AT, a quantized counterpart of BAIC-AT optimized with TorchAO and ExecuTorch, enabling efficient on-device inference. CE-CPS couples Q\_BAIC-AT (edge) and BAIC-AT (cloud) through the routing policy to achieve accurate common-case detection while reserving cloud resources for ambiguous windows.
+    \item \textbf{RAG-based anomaly investigation with LLMs.}
+    Beyond detection, CE-CPS integrates an RAG investigation layer that retrieves domain-specific operational and security knowledge and produces operator-facing explanations and recommended mitigations, employing different LLM capacities on the edge and in the cloud to respect device constraints.
+    \item \textbf{Green-WSADE for deployment-aware evaluation.}
+    We introduce the Green Water System Anomaly Detection Evaluation (Green-WSADE) framework to jointly quantify anomaly detection capability and computational resource consumption, and to provide an interpretable efficiency grade for guiding deployment choices across heterogeneous devices.
+    
+\end{itemize}
+This paper is organized as follows: Section~\ref{sec: related} reviews related work on anomaly detection in water CPS.
+Section~\ref{sec: method} details the anomaly detector and the other modules of the CE-CPS architecture.
+Section~\ref{sec: experiment} describes the experimental setup and presents the evaluation results.
+Finally, Section~\ref{sec: conclusion} concludes the paper.
+
+\section{RELATED WORK}\label{sec: related}
+\subsection{Anomaly Detection for CPS via Traditional Approaches}\label{related: noML}
+Traditional anomaly detection in water CPS typically employs threshold rules, statistical checks, or signal processing methods. These techniques are simple, lightweight, and easy to deploy, but they often fail to capture complex temporal patterns, which can result in false positives. Even so, such approaches remain useful as reference baselines or in settings where computing resources are scarce and labeled data are limited.
+
+Teixeira et al.~\cite{teixeira2012attack} showed that replay, zero-dynamics, and bias-injection attacks can compromise a water control system (Quadruple-Tank Process). They further introduced mitigation and detection mechanisms, notably a Kalman-filter--based scheme that tracks residuals and raises an alarm when deviations exceed a set threshold.
+Building on the need for more resilient architectures, Fagiolini et al.~\cite{fagiolini2014distributed} developed a backflow detector for distribution networks using logical consensus. Networked meters exchange binary signals in a local AMR configuration to reach a consistent decision without a central collector, removing single points of failure and lowering infrastructure costs.
+
+In parallel, Adepu et al.~\cite{adepu2016using} designed a distributed approach to detect single-stage multiple-point (SSMP) attacks, in which several sensors or actuators are compromised within one stage. By deriving physical invariants from system design and exploiting inter-stage water-flow relationships, neighboring controllers can flag anomalies even when a local controller is compromised. Extending this idea, Adepu et al.~\cite{adepu2016distributed} proposed an expert-system framework for real-time supervision and diagnosis of anaerobic wastewater treatment. The rule-based system encapsulates domain knowledge to monitor key process variables, identify abnormal conditions, and suggest corrective actions.
+Complementing these approaches, Punal et al.~\cite{punal2002expert} reviewed mitigation practices spanning network and physical layers, including application sandboxing, segmentation, timely patching, and integrity checks. For wireless and transient devices, shielding, strong authentication, and full-disk encryption are emphasized. In combination, these measures form a layered defense that strengthens CPS resilience.
+
+
+\subsection{Anomaly Detection for CPS via Machine Learning Approaches}\label{related: ML}
+Machine learning-based anomaly detection has emerged as a crucial research area in water CPS security. Compared to traditional approaches, machine learning methods offer enhanced flexibility and superior detection capabilities. Within water CPS, extensive studies focus on detecting malicious irregularities that threaten operational security and system reliability.
+
+Against this backdrop, Inoue et al.~\cite{inoue2017anomaly} compared unsupervised DNNs and SVMs in industrial control settings, finding that DNNs were better at suppressing false alarms whereas SVMs were slightly stronger at pinpointing anomalies, highlighting a practical trade-off in ICS use.
+Building on these insights, Li et al.~\cite{li2019mad} proposed a Generative Adversarial Network (GAN) approach incorporating Long Short-Term Memory (LSTM) components. The generator--discriminator setup is trained to highlight unusual behaviors, revealing potential cyber threats in SWaT.
+
+Complementing these model-centric advances, Yoong and Heng~\cite{yoong2019framework} presented a security framework for SWaT testbeds that uses ML-driven invariants to detect anomalies; because it is non-intrusive, it is well-suited to operational ICS deployments where direct system modifications are impractical.
+
+Contemporary developments in Transformer architectures have further advanced temporal anomaly detection capabilities for CPS applications, offering enhanced adaptability and precision for complex time-series data.
+
+\subsection{Lightweight Anomaly Detection Methods for CPS.}\label{related: LightWeight}   %优先有swat和wadi
+To enhance operational reliability across diverse water CPS, contemporary research emphasizes the development of resource-efficient solutions spanning hardware implementation to algorithmic optimization for water facility anomaly detection.
+
+Starting at the edge, Omambia et al.~\cite{omambia2022water} developed a water-quality monitoring pipeline in which sensors record temperature, pH, and chemical concentrations, transmit these signals to edge nodes (e.g., Raspberry Pi), run an on-device ML model, and forward results to the cloud for review.
+Extending this line from assessment to prediction, Rizal et al.~\cite{rizal2022water} built ANN-based models with a visual interface to forecast water quality, successfully estimating harmful substance levels for a Malaysian lake.
+
+Complementing these quality-centric efforts, Loukatos et al.~\cite{loukatos2022enriching} proposed a water management system using Raspberry Pi, Arduino IDE, and ANN models: tap-mounted sensors stream data to a Raspberry Pi for deep learning inference that separates normal operations from leak or waste events, aiding conservation.
+Pushing computation further to the ultra-constrained tier, Antonini et al.~\cite{antonini2022tinyml} targeted wastewater plants with a retrofit kit (ESP32-DevKitC), deploying an Isolation Forest locally to flag pump anomalies and subsequently switching to prediction while continually updating the model.
+
+However, current research lacks a unified evaluation of computational resource consumption and detection performance, which limits deployment in practical applications. Many methods adopt deep learning approaches, such as LSTM and Transformer architectures, but overlook deployment considerations for resource-constrained edge environments. In contrast, CE-CPS integrates the Green-WSADE evaluation framework, which jointly quantifies anomaly detection performance and computational resource consumption using a single composite score, enabling principled, deployment-aware model selection across heterogeneous hardware.
+
+
+\newcommand{\yes}{\faCheck}
+\newcommand{\no}{\faTimes}
+
+\begin{table*}\small
+\centering
+\caption{A comparison of relevant water treatment and distribution system anomaly detection methods with the proposed work}
+\label{tab:related_work}
+\renewcommand\arraystretch{1.5}
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{ccccccc}
+        \toprule
+        \textbf{Research}  & \makecell[c]{\textbf{Year}} & \makecell[c]{\textbf{Unsupervised} \\ \textbf{Anomaly Detection Model}} & \makecell[c]{\textbf{Transformer-based} \\ \textbf{Model}}    &   \makecell[c]{\textbf{Resource-constrained} \\ \textbf{Edge Deployment}} &  \textbf{Quantization}
+        &  \makecell[c]{\textbf{Computational Resource} \\ \textbf{Consumption Evaluation}}  \\
+        \midrule
+
+
+        Adepu et al.~\cite{adepu2016distributed} & 2016 &  \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}\\
+
+        Inoue et al.~\cite{inoue2017anomaly} & 2017 & \textcolor{green}{\ding{52}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}\\
+
+
+        Li et al.~\cite{li2019mad} & 2019 & \textcolor{green}{\ding{52}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}\\
+
+        Yoong et al.~\cite{yoong2019framework} & 2019 & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}\\
+
+        Audibert et al.~\cite{audibert2020usad} & 2020 & \textcolor{green}{\ding{52}} & \textcolor{green}{\ding{52}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}\\
+
+        Deng et al.~\cite{deng2021graph} & 2021 & \textcolor{green}{\ding{52}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}\\
+
+        Antonini et al.~\cite{antonini2022tinyml} & 2022 & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}} & \textcolor{green}{\ding{52}}  & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}\\
+             
+        Xu et al.~\cite{xu2022anomaly} & 2022 & \textcolor{green}{\ding{52}} & \textcolor{green}{\ding{52}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}}\\
+
+        Yang et al.~\cite{yang2023dcdetector} & 2023 & \textcolor{green}{\ding{52}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}}\\
+
+        Pereira et al.~\cite{pereira2024energy} & 2024 & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}} & \textcolor{green}{\ding{52}} & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}}\\  
+
+        Li et al.~\cite{li2025t} & 2025 & \textcolor{green}{\ding{52}} & \textcolor{green}{\ding{52}} & \textcolor{red}{\ding{56}} & \textcolor{red}{\ding{56}}  & \textcolor{red}{\ding{56}}\\
+    
+ 
+        This work.  & - & \textcolor{green}{\ding{52}} 
+        & \textcolor{green}{\ding{52}} & \textcolor{green}{\ding{52}} &\textcolor{green}{\ding{52}} & \textcolor{green}{\ding{52}}\\
+        \bottomrule
+\end{tabular}
+}
+\end{table*}
+
+
+\subsection{The proposed work compares relevant methods}
+As summarized in Table~\ref{tab:related_work}, we present a comparative analysis of representative anomaly detection methods targeting CPS. This comparison reveals that most prior studies lack a systematic framework to jointly evaluate detection performance and computational resource usage, which is a critical limitation for deployment in heterogeneous cloud-edge environments. In particular, although many approaches adopt powerful deep models to achieve high accuracy, they rarely account for resource efficiency and runtime feasibility, especially on resource-constrained edge devices.
+Motivated by the cloud-edge dilemma---balancing accuracy against computational and communication cost---we propose the CE-CPS architecture, which aims to achieve a more favorable accuracy--efficiency trade-off. Furthermore, CE-CPS incorporates a flexible evaluation framework that enables fair comparisons across heterogeneous platforms, thereby assisting practitioners in selecting the anomaly detector that best aligns with their operational objectives and resource constraints.
+
+\section{CE-CPS}\label{sec: method}
+\subsection{Problem Definition}
+Let $Z=\{z_1,\dots,z_R\}$ denote a stream of raw CPS data. The feature extractor $\phi$ maps each log into a structured representation, and a windowing operator $\psi_i$ groups the resulting representations into fixed-length context windows of size $i$. The detector input is thus
+$X=\{x_1,\dots,x_L\}$, where $X=\psi_i(\phi(Z))$ and each $x_j\in\mathbb{R}^i$ represents an $i$-dimensional context vector. CE-CPS performs unsupervised anomaly detection in a heterogeneous cloud--edge environment by assigning a binary label $\hat{y}_j\in\{0,1\}$ to each window $x_j$, while operating under tight edge-side computational budgets and restricting data transmission to the cloud server.
+On the edge node, CE-CPS runs \textbf{Q\_BAIC-AT}, an ensemble of $K$ resource-efficient base detectors $\{Q_k\}_{k=1}^K$. Given a window $x_j$, Q\_BAIC-AT produces an anomaly score vector
+\[
+x_j=\big(Q_1(x_j),\dots,Q_K(x_j)\big)\in\mathbb{R}^K,
+\]
+which is converted into a preliminary edge decision $\hat{y}^{E}_j$ (e.g., via per-model thresholds followed by ensemble aggregation). The edge side is designed to classify most samples locally in order to reduce latency, bandwidth consumption, and privacy exposure. To escalate only ambiguous cases, CE-CPS incorporates a routing policy \textit{RP} that identifies uncertain windows by their proximity to the edge decision boundary induced by a threshold vector $T=(t_1,\dots,t_K)\in\mathbb{R}^K$. Let $\Sigma$ denote the covariance matrix of edge-side anomaly score vectors. For each $x_j$, uncertainty is quantified via the Mahalanobis distance
+\[
+d_M(T,x_j)=\sqrt{(T-x_j)^\top \Sigma^{-1}(T-x_j)}.
+\]
+The router then selects a subset $D\subseteq X$ of size $M$ consisting of windows with the smallest distances (i.e., those closest to the boundary) and forwards only these uncertain samples to the cloud server.
+
+On the cloud server, CE-CPS deploys \textbf{BAIC-AT}, an ensemble of $I$ higher-capacity base detectors $\{B_i\}_{i=1}^I$, to re-evaluate the routed subset $D$. For each $x_j\in D$, the cloud ensemble produces a refined prediction $\hat{y}^{X}_j$, and the final label $\hat{y}_j$ is obtained by combining edge and cloud inferences (edge-only for $x_j\notin D$, cloud-assisted aggregation for $x_j\in D$). This collaborative inference strategy is designed to preserve anomaly detection performance while reducing edge-side computation and end-to-end transmission overhead. Therefore, the key design objective of CE-CPS is to learn and deploy $(\{Q_k\}, \{B_i\}, RP)$ so as to resolve the cloud-edge dilemma: under explicit edge-side compute constraints, the architecture should preserve as much anomaly-detection capability as possible while avoiding the excessive communication overhead of cloud-only solutions. To this end, CE-CPS adopts an uncertainty-aware routing strategy that offloads only uncertain samples to the cloud and retains high-confidence cases on the edge, thereby minimizing edge-to-cloud transmission. By transmitting fewer samples, CE-CPS reduces end-to-end latency (fewer round trips), alleviates the cloud-side processing load, and improves privacy and security by keeping most raw telemetry local. Overall, this selective offloading method is more efficient and more secure than naive approaches that upload all system data to the cloud.
+
+\subsection{Architecture Overview}
+\begin{figure*}
+    \centering
+    \includegraphics[width=\linewidth]{CE-CPS-architecture.png}
+    \caption{The proposed holistic Cloud-Edge Collaborative Anomaly Behavior Analysis architecture for CPS, comprising data storage, pre-processing, anomaly detection, collaborative deployment, and efficiency evaluation.}
+    \label{fig: CE-CPS}
+\end{figure*}
+In this section, we propose a cloud--edge collaborative anomaly behavior analysis architecture for CPS, termed \textbf{CE-CPS}. As shown in Fig.~\ref{fig: CE-CPS}, CE-CPS comprises six interconnected modules that form an end-to-end pipeline from data acquisition to detection, investigation, and deployment evaluation. The \textbf{Data Storage} module maintains collected CPS data, including raw physical-process measurements and cyber traces. The \textbf{Data Preprocessing} module extracts features, normalizes variables, and constructs detector-ready inputs. The \textbf{Anomaly Detector} module extends AIC-AT into BAIC-AT to identify abnormal patterns from the processed sequences. The \textbf{Anomaly Investigation} module adopts RAG to analyze detected anomalies and provide actionable mitigation guidance to strengthen system security. In parallel with detection, this module provides operator-oriented anomaly investigation via an RAG layer. The RAG layer retrieves domain knowledge and injects it into prompts so that generated reports are grounded in evidence rather than parametric memory.
+The \textbf{Collaborative Deployment} module places the full \textbf{BAIC-AT} on compute-rich cloud servers while deploying a quantized variant, \textbf{Q\_BAIC-AT}, on resource-constrained edge devices. To balance latency, cost, and accuracy, a distance-based routing strategy retains high-confidence cases for local edge processing and forwards only uncertain inputs to the cloud for higher-fidelity inference; the cloud tier can further support anomaly investigation via task-oriented prompting and an RAG-based assistant. This collaboration improves detection quality while reducing on-device computation and communication overhead. Finally, the \textbf{Green-WSADE} module reports standardized metrics that jointly summarize computational resource consumption and detection performance, enabling fair comparison across heterogeneous platforms and supporting deployment trade-off analysis.
+
+
+\subsection{Data Storage}
+This module is deployed on edge devices within the water CPS and stores raw data collected in situ, including physical-component telemetry (sensor readings and actuator states) as well as cyber data. The stored data are treated as immutable---they are not relabeled, resampled, or otherwise modified---so that the downstream data pre-processing module, whether executed at the edge or in the cloud, can operate on an unaltered and reproducible record of the original plant data. Representative testbeds for such edge-based data collection include the Secure Water Treatment (SWaT)~\cite{mathur2016swat} and Water Distribution (WADI)~\cite{ahmed2017wadi} systems.
+SWaT and WADI are widely used benchmarks for anomaly detection in cyber-physical systems. Both provide raw, multivariate time-series data covering normal operation and attack periods. By capturing interactions between the physical process and the control logic, they are well-suited for evaluating methods tailored to water CPS.
+
+
+\subsection{Data Pre-processing}
+After data storage, the pre-processing module converts raw system data into structured sequences for the anomaly detector. It comprises two components: a feature extractor and a sequence generator. The feature extractor derives informative features from the stored telemetry, and the sequence generator organizes these features into time-ordered sequences via normalization and segmentation. Together, they standardize sensor and controller signals and produce detector-ready inputs.
+
+\subsubsection{Feature Extractor}
+The feature extractor in CE-CPS builds a unified, high-dimensional representation by analyzing the operational data stored from the water CPS. It focuses on sensor readings, actuator states, and PLC control-loop indicators to characterize normal behavior and detect deviations indicative of anomalies. Specifically, it extracts multivariate time-series features, including: (i) continuous measurements (e.g., flow, level, pressure, pump speed, and modulating or motorized valve signals); (ii) status tags of actuators and switches; and (iii) PLC control variables associated with loop dynamics (e.g., process value, setpoint, and controller output).
+
+\subsubsection{Sequence Generator}
+The sequence generator in CE-CPS prepares the extracted feature streams for the anomaly detector by applying normalization and segmenting the long time series into fixed-length sequences while preserving temporal order. It adopts a non-overlapping windowing scheme to capture local temporal dependencies in a consistent manner and to retain essential contextual information.
+By aligning the input format with the specific requirements of the detector, the sequence generator plays a pivotal role in enabling effective anomaly detection for complex water CPS processes.
+
+\subsection{Anomaly Detector}
+\subsubsection{BAIC-AT}
+We formulate anomaly detection in water CPS as a sequence classification problem, aiming to identify abnormal temporal patterns in the preprocessed signals. Unlike generative settings, the detector operates by directly analyzing the input sequence and assigning anomaly-related labels without synthesizing new data. Transformer encoders are well-suited to this task because they can capture long-range dependencies and learn rich contextual representations from multivariate time series. Accordingly, we adopt an encoder-only architecture, which removes the decoder and focuses model capacity on recognizing anomalous behaviors. During detection, the preprocessed data are represented as an ordered sequence $\mathcal{X}=\{x_1,x_2,\ldots,x_N\}$, $x_i\in \mathbb{R}^{d \times 1}$, where $d$ denotes the dimensionality of the processed data and $N$ represents the length of the sequence. Technically, BAIC-AT follows the Anomaly Transformer design and adopts an encoder-only Transformer backbone. It retains the standard multi-layer encoder stack but replaces the vanilla self-attention with an anomaly attention mechanism. Consequently, BAIC-AT is built by stacking encoder layers composed of anomaly-attention blocks and position-wise feed-forward networks. This hierarchical design enables the model to learn latent associations from deep, multi-level representations, thereby improving anomaly detection on multivariate data in water CPS.
+
+For the $l$-th encoder layer, the forward propagation is:
+\begin{equation}
+\begin{aligned}
+Z^{l} &= \mathrm{Layer\text{-}Norm}\!\left(X^{l-1}+\mathrm{Anomaly\text{-}Attention}\!\left(X^{l-1}\right)\right),\\
+X^{l} &= \mathrm{Layer\text{-}Norm}\!\left(Z^{l}+\mathrm{Feed\text{-}Forward}\!\left(Z^{l}\right)\right),
+\end{aligned}
+%\tag{1}
+\end{equation}
+where $X^{0}$ denotes the embedded raw series and $X^{l}$ is the hidden representation.
+To model both the prior-association and the series-association, the Anomaly-Attention adopts a two-branch design:
+\begin{equation}
+\begin{aligned}
+Q,K,V,\sigma &= X_{l-1}W_{Q}^{l},\;X_{l-1}W_{K}^{l},\;X_{l-1}W_{V}^{l},\;X_{l-1}W_{\sigma}^{l},\\
+P^{l} &= \left\{\frac{1}{\sqrt{2\pi}\sigma_{i}^{l}}
+\exp\!\left(-\frac{|i-j|^{2}}{2(\sigma_{i}^{l})^{2}}\right)\right\}_{j=1}^{N},\\
+S^{l} &= \mathrm{Softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_{model}}}\right),\\
+X^{l} &= S^{l}V,
+\end{aligned}
+%\tag{2}
+\end{equation}
+where $P^{l}$ is the (Gaussian) prior-association and $S^{l}$ is the learned series-association.
+The association discrepancy is defined by the symmetrized KL divergence:
+\begin{equation}
+\mathrm{AssDis}(P,S;X)=
+\left[
+\frac{1}{L}\sum_{l=1}^{L}\Big(\mathrm{KL}(P^{l}_{i,:}\|S^{l}_{i,:})+\mathrm{KL}(S^{l}_{i,:}\|P^{l}_{i,:})\Big)
+\right]_{i=1,\cdots,N}.
+\end{equation}
+
+Let $\hat{X}$ be the reconstruction of $X$. The total loss combines reconstruction and association discrepancy:
+\begin{equation}
+L_{Total}(\hat{X},P,S;X)=\|X-\hat{X}\|_{F}^{2}-\lambda\|\mathrm{AssDis}(P,S;X)\|_{1},
+\end{equation}
+where $\lambda$ trades off the two terms. The minimax strategy is implemented by two alternating phases:
+\begin{equation}
+\begin{aligned}
+\textbf{Minimize Phase: } & L_{Total}(\hat{X},P,S^{detach},-\lambda;X),\\
+\textbf{Maximize Phase: } & L_{Total}(\hat{X},P^{detach},S,\lambda;X),
+\end{aligned}
+\end{equation}
+where $^\ast detach$ stops gradient backpropagation for the detached association. At inference time, the point-wise anomaly score is:
+\begin{equation}
+\mathrm{E}(X)=
+\mathrm{Softmax}\!\big(-\mathrm{AssDis}(P,S;X)\big)
+\odot
+\left[\|X_{i,:}-\hat{X}_{i,:}\|_{2}^{2}\right]_{i=1,\cdots,N},
+%\tag{6}
+\end{equation}
+where $\odot$ is the element-wise product.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\textwidth]{Bagging.png}
+    \caption{The training process of BAIC-AT.}
+    \label{fig: bagging}
+\end{figure}
+After obtaining anomaly scores $E=\{e_1,e_2,\ldots,e_n\}$ from CPS data, we adopt an automatic post-processing scheme to replace K-Means thresholding and manual inspection. Specifically, we fit a Gaussian mixture model (GMM) to the score distribution via Expectation-Maximization (EM), modeling each score by
+$P(e_i) = \sum^{U}_{i=1} \alpha_i p_i(e_i)$, with $\sum_{i=1}^{U} \alpha_{i} =1$.
+Each component $p_i(e_i)$ is
+\begin{equation}
+    \begin{aligned}
+    p_{i}\left(e_{i}\right) =\frac{1}{(2 \pi)^{\frac{D}{2}}\left|\sum_{i}\right|^{2}} \exp \left(-\frac{\left(e_{i}-\mu_{i}\right)^{\text{T}} \sum_{i}^{-1}\left(e_{i}-\mu_{i}\right)}{2}\right)
+    \end{aligned}
+\end{equation}
+where component $i$ is parameterized by $(\mu_i,\sum_i)$. Hence, the mixture parameters are
+$\theta = \{\alpha_i,\mu_i,\sum_i\}_{i=1,...,U}$ and the density can be written as
+$P(E \mid \theta) = \sum^{U}_{i} \alpha_i p_i(E \mid \theta_i)$.
+We estimate $\theta$ from training anomaly scores by maximizing the log-likelihood
+\begin{equation}
+    \log (\ell(\theta \mid E)) =\log \prod_{t=1}^{N} p\left(e_{t} \mid \theta\right) 
+    =\sum_{t=1}^{N} \log \left(\sum_{j=1}^{U} \alpha_{j} p_{j}\left(e_{t} \mid \theta_{j}\right)\right) ,
+\end{equation}
+where $N$ is the number of score points in $E$. Introducing the latent variable $H$, the complete-data log-likelihood is
+\begin{equation}
+    \log (\ell(\theta \mid E,H))  =\log (P(E,H\mid \theta))  =\sum_{t=1}^{N} \log \left(\alpha_{hl} p_{hl}\left(e_{l} \mid \theta_{hl}\right)\right) .
+\end{equation}
+EM alternates between the E-step, which computes $\mathscr{Q}\left(\theta, \theta^{E}\right)=E[\log (\ell(\theta \mid E, H))]$, and the M-step, which updates $\theta$ by maximizing $\mathscr{Q}$, until convergence. The number of components is selected automatically using \textit{AIC}~\cite{cavanaugh2019akaike}. We run EM for each candidate $U$ and choose the model that minimizes
+\begin{equation}
+    \begin{aligned}
+        \mathrm{AIC}(U) = 2\,k(U) - 2\ln\!\big(\hat{L}(\hat{\theta}_U)\big),
+    \end{aligned}
+\end{equation}
+where $\hat{L}$ is the maximized likelihood under $\hat{\theta}_U$ and $k(B)$ counts the free parameters (mixture weights, means, and covariances). This AIC-driven selection removes manual tuning of $U$ while penalizing overly complex mixtures, yielding a parsimonious fit to noisy anomaly-score distributions.
+
+After fitting, the components are sorted in ascending order of their means: $\mu_1 \le \mu_2 \le \cdots \le \mu_U$, with corresponding weights $\{\alpha_1, \alpha_2, \ldots, \alpha_U\}$. In the typical case observed in our experiments, the lowest-mean component captures a simple majority of the mass and is taken as the normal class. The anomaly rate is the remaining mixture weight, and the decision threshold is set to the corresponding upper quantile of the score distribution. The procedure also handles cases in which normal data span multiple low-mean components.
+We identify normal components by cumulatively aggregating from the lowest mean upward until the combined weight reaches a majority threshold $\tau$ (e.g., $0.5$ for ensuring a simple majority). This is done by finding the smallest $u$ such that $\sum_{k=1}^{u} \alpha_k \ge \tau$. Once the normal components are identified, the anomaly proportion $r$ is set as $r = 1 - \sum_{k=1}^{u} \alpha_k$, and the threshold $\sigma$ is set as the $(1-r)$-quantile of the anomaly scores.
+A further advantage of this method is its ability to cluster different types of anomalies into distinct components, since different abnormal patterns may form separate Gaussian components. A detailed study of this property is left for future work.
+
+To reduce prediction variance and attenuate idiosyncratic failure modes of individual detectors, BAIC-AT adopts a bagging (bootstrap aggregating) strategy~\cite{breiman1996bagging}. Given a benign training set $\mathcal{D} = \{z_1, \ldots, z_n\}$, we train $I$ base AIC-AT detectors $\{b_i\}_{i=1}^{I}$. Each detector $b_i$ is optimized on a bootstrap resample $\mathcal{D}_i \sim \mathcal{D}$ (with replacement), so that bootstrap diversity reduces inter-model correlation and thereby improves ensemble generalization~\cite{dietterich2000ensemble}.
+For a test sample $x$, detector $b_i$ produces a real-valued anomaly score $s_i(x)$.
+Each detector independently learns a detector-specific threshold $\theta_i^{*}$ via an EM-fitted Gaussian mixture model applied to its score distribution, yielding the binary decision
+\begin{equation}
+  \hat{y}_i(x) = \mathrm{1}\!\left[s_i(x) \geq \theta_i^{*}\right],
+  \qquad \hat{y}_i(x) \in \{0, 1\},
+  \label{eq:per_detector_decision}
+\end{equation}
+where $\hat{y}_i(x) = 1$ denotes an anomaly. BAIC-AT aggregates the $I$ binary decisions by majority voting. Let $\tau \in (0, 1)$ be a voting threshold. The ensemble decision is
+ \begin{equation}
+  \hat{y}(x)
+  = \mathrm{1}\!\left[\frac{1}{I}\sum_{i=1}^{I}\hat{y}_i(x) > \tau\right].
+  \label{eq:majority_vote}
+\end{equation}
+The default choice $\tau = \tfrac{1}{2}$ implements a \emph{strict} majority rule (ties are resolved as normal), which is consistent with the original bagging formulation of~\cite{breiman1996bagging}.
+In class-imbalanced or high-false-alarm settings, $\tau$ can be raised toward $1$ to
+reduce the false-positive rate at the cost of recall. By the ensemble error bound of \citet{hansen1990neural}, when each base detector has an error rate $\epsilon_i < 0.5$ and the detectors are mutually independent, the ensemble error rate decreases exponentially in $I$. In practice, bootstrap diversity partially decorrelates the base detectors even when full independence does not hold~\cite{dietterich2000ensemble}, yielding consistent performance gains over any single detector.
+
+
+Bagging (bootstrap aggregating) reduces prediction variance by fitting multiple versions of a learner on bootstrap replicates of the training set and then combining their outputs. As shown in Figure~\ref{fig: bagging} and Algorithm~\ref{alg:bagged_train}, given a benign training set $\mathcal{D}$ of size $n$ (constructed from sliding windows or sequences while preserving intra-window temporal order), BAIC-AT trains $I$ base AIC-AT detectors $\{b_i\}_{i=1}^{I}$. For each $i\in\{1,\dots,I\}$, we sample a bootstrap dataset $\mathcal{D}_i$ of size $n$ with replacement from $\mathcal{D}$ and optimize $b_i$ on $\mathcal{D}_i$:
+\begin{equation}
+\mathcal{D}_i=\{z_{i,1},\dots,z_{i,n}\}
+\end{equation}
+Beyond bootstrap diversity, BAIC-AT can further reduce inter-model correlation by randomizing key training configurations across base learners, including encoder depth, batch size, training epochs, and the loss weight $\lambda$. During inference, each base detector produces an anomaly score $s_i(x)$ for a test sample $x$ and maps it to a binary decision $\hat{y}_i(x)$ using its EM-based thresholding. BAIC-AT then aggregates base decisions via majority voting:
+\begin{equation}
+\hat{y}(x)=\mathbb{1}\!\left[\frac{1}{I}\sum_{i=1}^{I}\hat{y}_i(x)\ge \frac{1}{2}\right].
+\end{equation}
+By averaging out idiosyncratic failure modes of individual learners, BAIC-AT attenuates sensitivity to rare or context-specific anomalies, yields more consistent alarms, and improves deployability for water CPS monitoring, where persistent false positives erode operator trust while missed attacks can lead to severe physical consequences.
+
+\begin{algorithm}[t]
+    \caption{BAIC-AT Training}\label{alg:bagged_train}
+    \DontPrintSemicolon
+    \SetKwProg{Fn}{function}{}{}
+    \SetKwFunction{Bootstrap}{BootstrapSample}
+    \SetKwFunction{Fit}{AIC-AT}
+    
+    \Fn{\texttt{TrainBAIC-AT}$(A,\; I,\; n)$}{
+        \tcp{$A$: training data;\; $I$: number of base learners;\; $n$: size of each bootstrap draw}
+        $B \gets \emptyset$ \tcp*{container for base AIC-AT models}
+        
+        \For{$i \gets 1$ \KwTo $I$}{
+            $A^{(i)} \gets \Bootstrap(A,\; n)$ \tcp*{sample $n$ items from $A$ with replacement}
+            $B^{(i)} \gets \Fit(A^{(i)})$ \tcp*{train one AIC-AT base model}
+            $B \gets B \cup \{B^{(i)}\}$ \tcp*{store the trained model}
+        }
+        
+        \KwRet $B$ \tcp*{return ensemble $\{B^{(1)},\dots,B^{(I)}\}$}
+    }
+\end{algorithm}
+
+\subsubsection{Q\_BAIC-AT}
+\begin{figure*}
+\centering
+\includegraphics[width=\textwidth]{Executorch-workflow.png}
+\caption{TorchAO--ExecuTorch Deployment Pipeline in CE-CPS.}
+\label{fig: torchao-executorch}
+\end{figure*}
+To enable anomaly detection on resource-constrained edge devices, BAIC-AT must be quantized and converted into an executable program that supports fast on-device inference. This step is essential for addressing the cloud-edge dilemma: without model optimization, high-capacity AIC-AT models remain confined to the cloud, whereas practical edge deployment requires substantially lower compute and memory consumption. Specifically, the edge-based deployment pipeline consists of two stages: (i) TorchAO-based quantization and (ii) ExecuTorch-based deployment.
+
+\paragraph{TorchAO-based Quantization}
+TorchAO is a PyTorch-native optimization library that applies quantization and sparsity techniques to compress model parameters and reduce inference overhead, spanning training through deployment in a unified workflow~\cite{or2025torchao}. By reducing the parameter precision of the anomaly detector, TorchAO lowers compute and memory usage while preserving accuracy; critically, it allows independent bit-width selection for activations and weights, enabling fine-grained trade-offs between efficiency and fidelity. Among available quantization options, the technique int8\_dynamic\_activation\_int4\_weight (A8W4) dynamic offers a particularly favorable balance, achieving substantial reductions in computational resource consumption while retaining strong anomaly detection capability~\cite{liu2024crossquant,wu2307leap}.
+
+\paragraph{ExecuTorch-based Deployment}
+After TorchAO-based quantization, a portable, low-overhead runtime framework is required to deploy the quantized anomaly detector on the edge device. Among widely used local deployment frameworks (ExecuTorch~\cite{Executorch_document}, LiteRT~\cite{web:lang:litert}, Core ML~\cite{web:lang:coreml}, TensorRT~\cite{web:lang:tensorrt}), Core ML is restricted to Apple platforms and TensorRT assumes GPU availability; therefore, both are unsuitable for our CPU-only edge devices. Consequently, only ExecuTorch and LiteRT are viable for different resource-constrained edge devices.
+
+The edge-based deployment pipeline begins with a strategic choice to implement the AIC-AT model in PyTorch. As a substantive extension of the AT, AIC-AT benefits from a research-centric development workflow. Although TensorFlow 2.x defaults to eager execution---a dynamic style similar to PyTorch---the imperative, runtime-defined programming model of PyTorch remains especially well-suited to the exploratory design of AIC-AT~\cite{alawi2025comparative}. This paradigm enables natural debugging with standard Python tooling and affords maximal flexibility for complex or data-dependent control flow, which is crucial during prototyping. By contrast, while TensorFlow 2.x can offer a comparable dynamic experience, extracting peak performance often entails annotating code with decorators such as \textit{@tf.function} to stage static graphs, a practice that can complicate the debugging workflow~\cite{liu2021detecting,galeone2019hands}. For rapid, iterative research, the straightforward Python-centric approach of PyTorch confers a tangible advantage. This platform choice creates a natural path dependency: PyTorch-native tools are the most efficient and reliable for subsequent stages of the CE-CPS architecture. Given that the model is authored in PyTorch and optimized with TorchAO, selecting ExecuTorch as the on-device runtime is a natural consequence of a unified, end-to-end ecosystem strategy. While LiteRT is a capable edge runtime, ExecuTorch offers a decisive benefit for PyTorch-native projects by eliminating intermediary conversion stages. This direct compile-and-execute pathway removes the fragile LiteRT conversion pipeline, which requires translating a PyTorch model to an intermediate representation and then to the \textit{.tflite} format, thereby reducing failure modes and simplifying deployment. Based on these practical deployment advantages, ExecuTorch is used as the deployment framework in this study.
+
+As shown in Figure~\ref{fig: torchao-executorch}, ExecuTorch-based deployment proceeds in two stages. First, during ahead-of-time (AOT) compilation, the TorchAO-quantized AIC-AT model is exported to an ExecuTorch graph and compiled into an ExecuTorch program with tailored memory planning and, when available, hardware acceleration. Second, at runtime, the target device executes this compiled program. During inference, this program runs on the target edge device with low CPU and memory usage.
+We optimize AIC-AT through the TorchAO-ExecuTorch workflow to complete the edge-side deployment of the CE-CPS architecture. This deployment is a practical response to the cloud-edge dilemma: instead of continuously streaming all telemetry to the cloud, it enables low-latency monitoring under tight resource budgets. As a result, CE-CPS enables long-term, low-cost, and stable anomaly detection on widely deployed edge nodes, while reserving cloud resources for only the limited fraction of samples that require higher-capacity analysis.
+
+\subsection{Anomaly Investigation}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\textwidth]{RAG-LLM-LangChain-Investigation.png}
+    \caption{RAG workflow for anomaly investigation in water infrastructure.}
+    \label{fig: RAG-LLM}
+\end{figure}
+
+Detection alone is insufficient to support operational response: security operators require actionable context to interpret alarms, assess risk, and prioritize remediation. To bridge this gap, we introduce a retrieval-augmented generation (RAG) module for downstream anomaly investigation, which transforms each detected event into a structured, evidence-grounded narrative comprising probable root-cause hypotheses and mitigation recommendations.
+As illustrated in Figure~\ref{fig: RAG-LLM}, the module is implemented as a LangChain-based RAG pipeline that anchors LLM outputs in a curated water CPS security knowledge base. An offline vector index is constructed from a domain-specific corpus comprising three complementary sources: (i) the MITRE ATT\&CK for ICS knowledge base, covering adversarial tactics, techniques, and procedures (TTPs) relevant to industrial control systems; (ii) system-level documentation for the SWaT and WADI testbeds, including asset inventories, control logic descriptions, sensor--actuator mappings, and known attack surfaces; and (iii) vetted operational references such as incident-response checklists and ICS security hardening guidelines.
+Each document is preprocessed into semantically coherent chunks annotated with structured metadata tags (e.g., source type, system component, ATT\&CK technique identifier) and embedded into a local vector store, enabling on-premises retrieval without unnecessary data exposure.
+
+At inference time, each detected anomaly is encoded as a semantic query capturing its contextual attributes: the timestamp range, the identifiers of affected sensors and actuators, and the temporal trajectory of anomaly scores. An approximate nearest-neighbor search---optionally augmented with metadata pre-filtering---retrieves the top-$k$ most relevant evidence passages. These passages are then concatenated with the raw anomaly context to form an augmented prompt that instructs the LLM to:
+(1) ground its analysis in the retrieved passages, citing them explicitly as supporting evidence;
+(2) map observed behaviors to applicable ATT\&CK for ICS tactics and techniques; and
+(3) produce a standardized investigation report structured around five fields---symptom description, likely root causes, impacted assets, recommended mitigations, and confidence qualifications. By confining generation to domain-expert-validated evidence, this retrieval-grounding step mitigates the risk of LLM hallucination and ensures that produced explanations remain consistent with established CPS security practice.
+
+To further enhance consistency and domain relevance for RAG, we employ a fixed, water CPS-specific prompt template tailored to system data collected from water CPS, explicitly incorporating both physical-layer and cyber-layer observations.
+\begin{mdframed}[
+  backgroundcolor=gray!3,
+  linecolor=black!15,
+  roundcorner=4pt,
+  innertopmargin=6pt,
+  innerbottommargin=6pt,
+  leftmargin=0pt,
+  rightmargin=0pt,
+  skipabove=5pt,
+  skipbelow=5pt
+]
+\noindent\textbf{Prompt: You are an assistant who reviews the water CPS data. After receiving the system context, analyze the abnormal data provided by the user. Identify the attacks that caused the anomalies and identify the target assets that may have been affected. Recommend mitigations in clear language. \\
+\noindent\textbf{Input:} \texttt{<Physical Data> <Cyber Data>}
+}
+\end{mdframed}
+
+
+\subsection{Collaborative Deployment} \label{method: deployment} 
+CE-CPS achieves collaborative deployment by connecting the edge-side Q\_BAIC-AT ensemble with the cloud-side BAIC-AT ensemble via a Mahalanobis distance-based routing policy. This policy assigns each incoming sample between local processing and cloud offloading according to its proximity to the edge decision boundary.
+Specifically, samples for which Q\_BAIC-AT produces low-confidence predictions are flagged as uncertain and forwarded to the cloud, where the higher-capacity BAIC-AT ensemble re-infers their labels, recovering detection performance that the constrained edge model would otherwise sacrifice.
+
+The cloud ensemble is instantiated with 81 AIC-AT base learners, a configuration identified via the sensitivity analysis in Figure~\ref{fig: FscoreOverEnsemble} at which performance saturates while generalization remains strong. Diversity among these base learners is jointly induced by bootstrap resampling and heterogeneous training hyperparameters, whose combined effect reduces prediction variance and mitigates overfitting. At the edge, Q\_BAIC-AT aggregates 3 quantized AIC-AT models optimized with ExecuTorch and TorchAO, achieving low computational overhead while preserving high detection quality.
+Under the routing policy, the vast majority of windows are classified locally on the edge, and only uncertain cases are forwarded to the cloud.
+This collaborative design directly addresses the cloud-edge dilemma. A cloud-only pipeline incurs excessive network latency, bandwidth consumption, and data-privacy exposure by transmitting all telemetry upstream. A purely edge-based pipeline, conversely, typically requires aggressive model compression that degrades detection fidelity.
+CE-CPS sidesteps both failure modes by reserving network and cloud resources exclusively for the small subset of samples that yields the largest marginal performance gains, achieving efficient resource utilization without compromising detection reliability.
+
+\begin{algorithm}[t]
+\caption{Cloud--Edge Collaborative Execution}\label{alg: collaborative_execution}
+\DontPrintSemicolon
+\SetKwProg{Fn}{function}{}{}
+\SetKwFunction{Route}{Route}
+\SetKwFunction{Aggregate}{Aggregate}
+\Fn{\texttt{Run}$(S, Q, B, RP)$}{ 
+    \tcp{Inputs: $S$ is a testing set with $|S|=V$; $Q=\{Q_1,\dots,Q_K\}$ are Q\_BAIC-AT models; $B=\{B_1,\dots,B_I\}$ are BAIC-AT models; $RP$ is a Mahalanobis-distance routing policy}
+    
+    \ForEach{$S_j \in S$}{
+        $EP[j] \gets \{\, Q_k(S_j) \mid k=1,\dots,K \,\}$ \tcp*[r]{edge votes for item $j$}
+    }
+     
+    $D \gets \Route(S, EP, RP)$ \tcp*{select a subset of $M$ samples for cloud inference}
+    
+    \ForEach{$d \in D$}{
+        $CP[d] \gets \{\, B_i(d) \mid i=1,\dots,I \,\}$ \tcp*[r]{cloud votes for item $d$}
+    }
+    
+    $F \gets \Aggregate(EP, CP)$ \tcp*{fuse edge and cloud predictions}
+    
+    \KwRet $F$\;
+}
+\end{algorithm}
+
+\paragraph{Cloud-Edge Collaborative Deployment}    
+CE-CPS employs a two-tier cloud-edge collaborative execution scheme tailored specifically for water CPS. The cloud hosts BAIC-AT, a full-capacity bagged ensemble that prioritizes detection fidelity, whereas the edge hosts Q\_BAIC-AT, a quantized counterpart that reduces memory usage and inference latency on resource-constrained devices. This division reflects a widely used principle in edge intelligence: keep common-case inference near the data source, and escalate only the uncertain samples to cloud nodes to control bandwidth and compute cost.
+
+As formalized in Algorithm~\ref{alg: collaborative_execution}, each incoming test sample $x$ is first processed by the edge ensemble to produce an anomaly score $s_e(x)$ and a provisional decision $\hat{y}_e(x)$. The routing policy then estimates whether $x$ is \emph{confidently} handled by the edge model by measuring its statistical deviation from the learned normal region in representation space. Concretely, let $z_e(x)$ denote the edge embedding (e.g., a penultimate-layer feature) and let $(\mu,\Sigma)$ be the mean and covariance estimated from normal training data. Routing is driven by a Mahalanobis metric,
+\begin{equation}
+d_M(x) \;=\; \bigl(z_e(x)-\mu\bigr)^{\top}\Sigma^{-1}\bigl(z_e(x)-\mu\bigr),
+\end{equation}
+which is widely used as a lightweight normality (or out-of-distribution) score. If $d_M(x)\le \tau$, \textsc{CE-CPS} accepts the edge output to achieve near real-time response for routine operating states; otherwise, the sample is escalated to the cloud BAIC-AT to obtain a higher-fidelity score $s_c(x)$ and decision $\hat{y}_c(x)$. The final output is produced via \emph{gated fusion}: the cloud decision is used for escalated samples, and the edge decision is retained otherwise. Optionally, when both scores are available, a smooth score-level fusion (e.g., $s(x)=\alpha s_c(x)+(1-\alpha)s_e(x)$ with $\alpha$ increasing with $d_M(x)$) can mitigate discontinuities near the routing boundary while preserving the compute savings of selective offloading. Overall, this collaborative execution is well-suited to water CPS monitoring, where most windows follow stable normal control dynamics whereas atypical or distribution-shifted behaviors warrant higher-capacity cloud analysis.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.7\textwidth]{Llama4-architecture.png}
+    \caption{The framework of Llama 4 Scout.}
+    \label{fig:Llama4Scout}
+\end{figure}
+
+To balance data security with analytical effectiveness, we implement anomaly investigation in a tiered manner, prioritizing on-device analysis and escalating to the cloud only when deeper reasoning is required. In our workflow, the first response is performed on resource-constrained edge nodes to ensure low latency, continuous availability, and strict data locality. Specifically, we employ Llama~3.2~\cite{abdullah2025evolution} as an edge-side investigator. Its lightweight, text-only variants are designed for low-latency inference under limited compute budgets, which aligns with always-on monitoring requirements. In addition, quantized variants are available with efficiency-oriented configurations and shorter context windows, enabling practical deployment with Arm CPU backends. At runtime, the edge RAG performs fast local triage: it summarizes detected anomalous windows, extracts salient numerical deviations, and consults a small on-device knowledge cache to generate reliable mitigation guidance. When network conditions degrade, this edge-first analysis can still provide timely operator guidance while keeping raw telemetry stored locally.
+
+
+Cloud-side investigation is invoked as a second stage to improve accuracy and completeness when the edge analysis remains uncertain or when the evidence demands substantially stronger reasoning capacity. This is necessary in our setting because thorough anomaly investigation often requires long-context synthesis across heterogeneous sources---including historical logs, process documentation, and operator guidelines---as well as higher-quality reasoning under service-cost constraints in security-critical workflows. Moreover, multimodal evidence such as process diagrams, trend plots, and network topology graphs is typically better handled in the cloud than on constrained edge hardware. For the cloud, we adopt Llama~4~Scout~\cite{abdullah2025evolution}, an open foundation model. Scout is built on a native multimodal Mixture-of-Experts architecture with early fusion, partitioned into 16 experts, where each request sparsely activates roughly 17B parameters out of a total capacity of approximately 109B. This sparse-activation design offers a practical cost-performance trade-off for cloud deployment, especially for security-critical operations that require strong reasoning while controlling inference cost. Scout is also attractive for RAG-based investigation because it is designed to support very long-context reasoning, enabling joint reasoning over large text corpora and visual materials, although the effective context length in production may be constrained by the serving stack. In our pipeline, when the edge node detects high uncertainty, it forwards a compact summary and the most relevant retrieved evidence to the cloud, where Scout performs comprehensive long-context and multimodal analysis to produce a more precise investigation outcome.
+
+
+\paragraph{Inference Routing Policy}
+As illustrated in Algorithm \ref{alg: ma_distance_func}, we adopt a Mahalanobis distance-based routing policy to decide whether a sample should be offloaded to the cloud. Each Q\_BAIC-AT base model ($j = 1,\dots,K$) has its own anomaly threshold $t_j$, which we stack into a reference vector $T = (t_1,\dots,t_K) \in \mathbb{R}^K$. For a given sample, the $K$ base models produce anomaly scores that are collected into a score vector $x_i \in \mathbb{R}^K$. The routing decision is then driven by the Mahalanobis distance between $x_i$ and $T$, computed with respect to the covariance of the score vectors:
+\begin{equation}
+    d_M(T, x_i) = \sqrt{(T - x_i)^{\top}\,\Upsilon^{-1}(T - x_i)},
+\end{equation}
+where $\Upsilon$ denotes the covariance matrix estimated over all anomaly score vectors. Samples whose score vectors lie closest to the decision boundary (i.e., with the smallest distances) are treated as the most uncertain and are therefore selected for transmission to the cloud for further analysis.
+The difference between $x_i$ and $T$ quantifies how far a sample lies from the ensemble calibrated decision boundary, while the Mahalanobis distance incorporates both the scale and correlation structure of the scores across models. By calibrating each model individually through $T$ and capturing cross-model interactions via $\Upsilon$, this routing policy strikes a practical balance between edge-side efficiency and cloud-side accuracy. Only ambiguous samples are offloaded, which improves overall detection performance while keeping communication overhead and cloud computation costs as low as possible.
+
+
+\begin{algorithm}[!t]
+\caption{Mahalanobis Distance-based Routing Policy}\label{alg: ma_distance_func}
+\SetKwProg{Fn}{function}{}{end}
+\SetKwComment{tcp}{// }{}
+\DontPrintSemicolon
+
+\Fn{\texttt{ma-routing}$(S, Q, a, T, \Sigma)$}{
+\tcp{Inputs: $S$ is a testing set with $|S|=V$; $Q=\{q_1,\ldots,q_K\}$ is an ensemble of $K$ quantized base models in Q\_BAIC-AT; $a$ is the top-$a$ data points with the smallest distances; $T=(t_1,\ldots,t_K)$ is a threshold vector; $\Sigma$ is a positive semi-definite covariance matrix of anomaly-score vectors.}
+$D \leftarrow \emptyset$ \tcp{initialize output set}
+
+\For{$i=1$ \KwTo $V$}{
+$x_i \leftarrow \{q_k(S_i)\mid k=1,\ldots,K\}$ \tcp{get anomaly scores from base models}
+$d_M(T,x_i)\leftarrow \sqrt{(T-x_i)^\top\Sigma^{-1}(T-x_i)}$ \tcp{compute Mahalanobis distance}
+}
+
+Sort all $d_M(T,x_i)$ in ascending order\;
+
+$\mathcal{I}_{\text{top}} \leftarrow$ indices of top $a$ smallest distances\;
+
+\ForEach{$i\in\mathcal{I}_{\text{top}}$}{
+$D \leftarrow D \cup \{S_i\}$\;
+}
+
+\Return{$D$} \tcp{samples forwarded to BAIC-AT}
+}
+\end{algorithm}
+
+
+\begin{table*}[htbp]
+    \centering
+    \scriptsize
+    \caption{The default weight setting and justification of computational resource consumption and anomaly detection capability metrics for the Green-WSADE framework.}
+    \begin{tabularx}{\linewidth}{|p{1cm}|p{1cm}|X|}
+    \toprule
+    Metric & Weight & Justification \\
+    \midrule
+      $m_{T}$ & 0.14 & Reflects computational resource usage and thermal control. Elevated temperatures can cause performance throttling, adversely affecting efficiency. \\
+    \midrule
+      $m_{Mem}$ & 0.15 & Reflects anomaly detection process memory usage, which is critical for stable operation, particularly on memory-limited edge devices.  \\
+    \midrule
+     $m_{C}$ &  0.15  & Measures CPU computational efficiency. High utilization may indicate bottlenecks, affecting real-time processing and energy efficiency. \\
+    \midrule   
+    $m_{Rcps}$ &  0.14  & Measures the anomaly detection process input operation frequency, affecting data flow and processing speed on edge devices.\\
+    \midrule
+     $m_{Wcps}$ &  0.14 & Measures the anomaly detection process output operation frequency, affecting data transfer efficiency and system response.\\
+    \midrule
+     $m_{S}$ &  0.14 & Smaller anomaly detection models improve storage, deployment, and network transfer efficiency, which is crucial for edge devices. \\
+    \midrule
+     $m_{F}$ & 0.14 & Balances precision and recall. While important for detection accuracy, practical deployment also requires resource efficiency. \\
+    \bottomrule
+    \end{tabularx}
+    \label{tab: Green-WSADE-weights}
+\end{table*}
+
+\subsection{Green-WSADE} \label{method: Green-WSADE}
+In water CPS, edge devices enable efficient situational awareness by performing on-site data analysis. However, these devices operate under limited computational and storage resources, making the efficiency of detection models critical to system reliability and maintenance cost. Inefficient anomaly detection methods increase computational overhead, which in turn elevates energy consumption, increases inference latency, and accelerates hardware degradation---collectively amplifying security risk and operational expenditure. Quantitative assessment of resource utilization alongside detection accuracy is therefore essential to ensure that edge-based water CPS operates reliably and sustainably.
+
+Our evaluation builds upon the computational efficiency assessment framework proposed by Fischer et al.~\cite{efficiency_framework}, which jointly characterizes resource consumption and detection quality. The framework tracks a set of heterogeneous efficiency metrics and maps them onto a mutually comparable index scale, enabling fair cross-environment comparison. Following their weighting methodology, we adopt an analogous evaluation procedure to derive a composite score that simultaneously captures computational efficiency and detection accuracy, thereby providing a reproducible basis for trade-off analysis across diverse hardware and software configurations.
+
+We deliberately exclude model complexity, end-to-end runtime, and power consumption from the composite index.
+First, under heterogeneous optimization techniques such as pruning, quantization, and operator fusion, model complexity measures become weak proxies for actual deployment cost, as identical computational workloads may incur different overheads across CPU architectures, core counts, and memory hierarchies.
+Second, end-to-end runtime is strongly influenced by PLC communication streams and background services, whose I/O delays can obscure the intrinsic contribution of the detection model and reduce cross-device comparability.
+Third, power consumption cannot be measured consistently on our edge platforms: onboard sensors are either unavailable or uncalibrated, while external meters capture aggregated consumption from networking, storage, and cooling components.
+Therefore, we rely on device-level metrics that are stably observable across all target systems: CPU temperature, CPU utilization, process I/O counts, process memory usage, and model size. These metrics align directly with the operational constraints of practical concern to practitioners and faithfully reflect the resource demands and runtime behavior of anomaly detection models as deployed in real water CPS environments.
+
+Concretely, the Green-WSADE framework collects six key computational resource metrics of the anomaly detector process: CPU temperature, memory usage, CPU utilization, model file size, and process I/O read and write counts. As the anomaly detector makes decisions on each sample, process I/O is normalized to a per-sample rate by dividing total reads and writes over the test run by the number of evaluated samples. This yields the average I/O cost of a single detection and supports fair comparison across datasets and devices.
+In addition, the framework quantifies detection performance using the $F_1$ score, thereby capturing both computational behavior and detection performance throughout inference.
+Table~\ref{tab: Green-WSADE-weights} reports the default weight setting used to compute the Green-WSADE composite score in this study. In practice, these weights can be adjusted to reflect deployment priorities. For example, memory-limited edge devices may up-weight process memory usage, while compute-rich servers may up-weight $F_1$ to prioritize detection capability.
+All metric weights sum to 1. We define $\alpha$ = \{$m_{T},m_{Mem},m_{C},m_{Rcps},m_{Wcps},m_{S},m_{F}$\} as the set containing all seven metrics above. In order to compare results across different devices, all metrics must be normalized to a relative index. For metric $m_v$ in experiment $\alpha$, the relative index $r_v(\alpha)$ is:
+
+\begin{equation}\label{equ: relative index}
+r_j(\alpha) = \left(\frac{m_j(\alpha)}{m_j(\alpha^{ref})}\right)^{\sigma_j}
+\end{equation}
+
+where $\alpha^{ref}$ denotes the reference results, and $\sigma_j$ determines whether a metric should be minimized ($\sigma_v=-1$) or maximized ($\sigma_v=+1$). The $\alpha^*$ represents the reference experiment results. Each metric is categorized into $B$ ranks based on its relative index values.
+To create a standardized evaluation, we determine $B-1$ boundaries $\{b_1, b_2, \ldots, b_{B-1} \}$.
+We define $b_0 = -\infty$ and $b_B = +\infty$ and assume $\forall \rho \in \{ 0,\ldots,B-1\} : b_{\rho}<b_{\rho+1}$.
+The final computational resource efficiency score (CRES) is computed using the weighted median method, which assigns each metric $v$ an importance weight $w_v$ with $\sum_{v=1}^{V} w_v = 1$~\cite{efficiency_framework}. Let $r_v(\alpha)=R_v(\alpha)$ denote the (normalized) score of metric $v$ under configuration $\alpha$. We first sort the metric scores in non-decreasing order.
+Let $\sigma$ be a permutation of $\{1,\ldots,V\}$ such that
+\begin{equation}
+r_{\sigma(1)}(\alpha)\le r_{\sigma(2)}(\alpha)\le \cdots \le r_{\sigma(V)}(\alpha).
+\end{equation}
+Define the cumulative weight
+\begin{equation}
+W_k=\sum_{j=1}^{k} w_{\sigma(j)}, \qquad k=1,\ldots,V.
+\end{equation}
+Then the weighted median index is
+\begin{equation}
+k^{\star}=\min\left\{k\in\{1,\ldots,V\}: W_k\ge \tfrac{1}{2}\right\},
+\end{equation}
+and the final score is given by
+\begin{equation}
+CRES(\alpha)=r_{\sigma(k^{\star})}(\alpha).
+\label{eq:cres_wmed}
+\end{equation}
+Herein, $V$ denotes the number of collected metric types and $w_v$ represents the weight of each metric, with $\sum_{v=1}^{V} w_v = 1$.
+Green-WSADE characterizes the trade-off between computational resource consumption and anomaly detection performance using a five-level grading scale, which translates the weighted CRES into qualitative, visually interpretable labels. Grade 1 indicates the highest efficiency, assigned to models that minimize resource usage while preserving strong detection performance relative to the baseline. Grade 2 reflects high efficiency, where effectiveness is retained with only a modest increase in resource cost. Grade 3 denotes moderate efficiency, representing a mid-range balance compared with the baseline. Grade 4 corresponds to low efficiency, driven by substantially higher resource demand and degraded relative detection performance. Grade 5 ranks the lowest efficiency, indicating the poorest overall balance between resource consumption and detection performance.
+
+
+\begin{table*}
+\centering
+\caption{Detailed Hardware Specification of the testbed for CE-CPS.} \label{tab:hardwares}
+\renewcommand\arraystretch{1.8}
+ \resizebox{\textwidth}{!}{
+\begin{tabular}{|c|p{3cm}|p{5cm}|c|c|p{3cm}|c|}
+\hline
+\textbf{Server} & \textbf{Device} & \textbf{CPU Specification} & \textbf{RAM} & \textbf{Storage} & \textbf{GPU} & \textbf{OS} \\
+\hline
+\multirow{3}{*}{{\parbox{3cm}{\centering Computational Resource-constrained\\Edge Devices}}} 
+& Raspberry Pi 3B+ &Broadcom BCM2837B0, quad-core Cortex-A53 64-bit SoC @ 1.4GHz & 1GB & 128GB MicroSD & - & Ubuntu 20.04.5 LTS \\
+& Raspberry Pi 4B & Broadcom BCM2711, quad-core Cortex-A72 64-bit SoC @ 1.8GHz & 8GB & 128GB MicroSD & - & Ubuntu 20.04.5 LTS \\
+& Raspberry Pi 5 & Broadcom BCM2712, quad-core Cortex-A76 64-bit SoC @ 2.4GHz & 8GB & 128GB MicroSD & - & Ubuntu 20.04.5 LTS \\
+\hline
+\multirow{2}{*}{{\parbox{3cm}{\centering Standard \\ Server}}} 
+& Data Processing Server & Intel(R) Core(TM) i7-14700 \newline Base: 2.10 GHz, Max: 5.40 GHz & 32GB & 2TB SSD & NVIDIA RTX 2000 Ada & Windows 11 24H2 \\
+& Data Analytics Server & Intel(R) Core(TM) i7-14700 \newline Base: 2.10 GHz, Max: 5.40 GHz & 32GB & 2TB SSD & NVIDIA RTX 2000 Ada & Ubuntu 24.04.2 LTS \\
+\hline
+\multirow{1}{*}{{\parbox{3cm}{\centering Data Streaming Server}}} &  Dell PowerEdge R650 server & 36-core Intel Xeon Platinum & 256GB & 1.6TB NVMe SSD & Mellanox ConnectX-6 100Gb NIC & Ubuntu\\
+\hline
+\multirow{1}{*}{{\parbox{3cm}{\centering Cloud Server}}} &  Talon High Performance Cluster & Two 64-bit 18-core Intel Xeon Gold 6140 processors & - & 1.5TB & 8 NVIDIA Tesla V100 & Red Hat Enterprise Linux 9.2\\
+\hline
+\end{tabular}
+}
+\end{table*}
+
+
+\section{EXPERIMENTS}\label{sec: experiment}
+Motivated by the cloud-edge dilemma---the fundamental trade-off between detection accuracy and computational cost under heterogeneous hardware constraints---we evaluate CE-CPS from two complementary perspectives. Specifically, we measure (i) anomaly detection performance and (ii) computational resource efficiency quantified by the Green-WSADE framework, and report results consistently across a set of representative cloud and edge devices.
+
+\subsection{Dataset}\label{experiment: dataset}
+\begin{table*}[h]
+\centering
+\caption{Attack categories and number of attacks based on the attacker's target CPS stages and attacked points of the SWaT and WADI datasets~\cite{zhou2023mp}.}   
+\label{tab: swat-wadi-attack-details}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{|c|p{7cm}|c|c|}
+\hline
+\textbf{Attack Category} & \textbf{Description} & \makecell[c]{\textbf{Number of attacks} \\ \textbf{on SWaT}} & \makecell[c]{\textbf{Number of attacks} \\ \textbf{on WADI}}  \\ \hline
+SSSP & A Single Stage Single Point attack focuses on exactly one point in a CPS. & 23 & 9 \\ \hline
+SSMP & A Single Stage Multiple Point attack focuses on two or more attack points in a CPS but within only one stage. In this case, the set P consists of more than one element selected from any one stage of the CPS. & 6  & 4\\ \hline
+MSSP &  A Multi Stage Single Point attack is similar to an SSMP attack except that the attack is performed across multiple stages. & 4 & 1\\ \hline
+MSMP & A Multi Stage Multiple Point attack is an SSMP attack performed across two or more stages of the CPS.& 3 & 1\\ \hline
+\end{tabular}
+}
+\end{table*}
+
+\begin{table*}[!t]
+\centering
+\caption{Attack categories in the SWaT and WADI testbeds, grouped by the primary hardware components targeted by the adversary~\cite{feng2019systematic,imanpourgoorabzarmakhidata}.}
+\label{tab:swat_attack_categories}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{|p{3.9cm}|p{6cm}|p{5.8cm}|}
+\hline
+\textbf{Attack category} & \textbf{Description} & \textbf{Consequence} \\
+\hline
+Physical Manipulation 
+& Direct manipulation of valve positions to reroute water, emulate main pipeline leaks, or isolate distribution branches.
+& Tank overflows, contamination of storage reservoirs with untreated water, unnecessary water loss, and loss of service to consumers. \\
+\hline
+\makecell[l]{Control Override\\ and Manipulation}
+& Compromising control logic to force pumps, valves, and pressure controllers into unsafe operating states, such as running pumps against closed valves or bypassing interlocks.
+& Physical damage to infrastructure (e.g., pipe bursts) and unauthorized changes in system pressure and flow distribution. \\
+\hline
+\makecell[l]{Sensor Tampering \\ and Manipulation}
+& Injecting or altering level sensor readings so that the control system incorrectly believes tanks are empty (to induce overfilling) or full (to allow excessive draining).
+& Stealthy reservoir draining, unalarmed tank overflows, and potential equipment damage caused by pumps operating under false measurement conditions. \\
+\hline
+\makecell[l]{Instrumentation and \\ Measurement Manipulation}
+& Corrupting measurements from flow meters and water-quality analyzers (e.g., conductivity and turbidity probes) to disrupt chemical dosing and online quality checks.
+& Chemical contamination of the distributed water (e.g., overdosing of reagents) or inadequate treatment of raw water relative to quality standards. \\
+\hline
+\makecell[l]{Disabling and Enabling  \\ Functions}
+& Selectively disabling or re-enabling critical functional components, such as chemical-injection pumps or disinfection units, to bypass essential treatment stages.
+& Interruption or degradation of water treatment processes, potentially leading to the distribution of untreated or unsafe water into the network. \\
+\hline
+\end{tabular}
+}
+\end{table*}
+
+
+\begin{table}[h!] 
+\centering
+\caption{Descriptive Statistics of the SWaT and WADI Datasets.}
+\label{tab:dataset_summary}
+\small
+\begin{tabularx}{\linewidth}{XXX}
+\toprule
+\textbf{Datasets} & \textbf{SWaT} & \textbf{WADI} \\ 
+\midrule
+Features & 51 & 123 \\ 
+Train &  495,000 &  1,048,571\\ 
+Test &  449,919 & 172,801 \\ 
+Anomaly rate(\%) & 12.1 & 5.99 \\   
+\bottomrule
+\end{tabularx}
+\end{table}
+The proposed CE-CPS architecture and Q\_BAIC-AT baseline are evaluated on two widely used datasets: SWaT and WADI. Table \ref{tab:dataset_summary} summarizes the basic characteristics of both datasets.
+For both SWaT and WADI, the training split corresponds to normal operating conditions, whereas the test split is drawn from a subsequent operating period containing both normal behavior and attack scenarios. We follow the official train-test partition released by the testbed operators~\cite{ahmed2017wadi,mathur2016swat}, which enables direct and fair comparison with prior work on these benchmarks. Both datasets provide ground-truth annotations released by the operators, primarily derived from recorded attack intervals and operator-validated abnormal operating windows. However, such interval-based labels may not fully capture naturally occurring faults, unlogged disturbances, or subtle process drifts. In this study, we use the official labels as the reference for evaluation while acknowledging their limitations: (i) scripted attacks provide only partial coverage and may not reflect the diversity of real-world adversarial behaviors; (ii) due to transient process dynamics, the boundaries of labeled windows can be temporally ambiguous; and (iii) practical deployments may involve concept drift, sensor noise, and maintenance-induced regime shifts that are outside the scope of static benchmark annotations. Accordingly, the reported results should be interpreted with these factors in mind, and we further discuss the resulting threats to validity in the corresponding section.
+
+\textbf{Secure Water Treatment (SWaT) Dataset}. The SWaT dataset corresponds to a scaled-down industrial water treatment plant that produces filtered water~\cite{mathur2016swat}.
+It contains 11 days of logs: 7 days of normal operation followed by 4 days in which multiple attack scenarios are introduced. During the benign phase, the plant is brought up from an empty initial state and allowed to reach a steady state. As reported in Table~\ref{tab: swat-wadi-attack-details}, 36 attacks occurred over the last four days. Several attacks last ten minutes and are executed back-to-back with ten-minute gaps, and others resume only after the system re-stabilizes. The stabilization time depends on the attack: actions that strongly perturb system dynamics require longer recovery, while simpler actions settle more quickly. Some attacks also produce delayed effects rather than an immediate impact. In addition, based on the specific hardware components targeted by the attacker in the SWaT and WADI testbeds, Table~\ref{tab:swat_attack_categories} further groups these attacks into five hardware-oriented attack types~\cite{imanpourgoorabzarmakhidata}.
+
+
+\textbf{Water Distribution (WADI) Dataset}. This dataset is derived from the WADI testbed, an extension of the SWaT testbed~\cite{ahmed2017wadi}, and comprises 16 days of recordings: 14 days of normal operation and 2 days under attack. During the normal period, level--flow--actuator interactions follow the designed control logic across the primary and secondary grids. In the attack period, representative single-point and multi-point cyber--physical intrusions manipulate sensors and actuators, under a CPS attacker model, to realize specific adversarial objectives. These scenarios are implemented via network-level manipulation of PLC-connected sensors and valves~\cite{adepu2019investigation}. As summarized in Table~\ref{tab: swat-wadi-attack-details}, the attacks are grouped into four categories according to the number of targeted control stages and process points. The majority of attacks persist for roughly ten minutes and are launched sequentially with similar idle gaps between them. In some cases, the plant is allowed to run without interference before the next attack so that the system can re-establish a steady state; attacks that severely disturb tank levels or inter-stage flows require noticeably longer recovery times than simpler manipulations.
+
+\subsection{Evaluation Metrics}
+\paragraph{Anomaly Detection Capability Evaluation}
+In previous leading research, including the Anomaly Transformer~\cite{xu2022anomaly} and USAD~\cite{audibert2020usad}, Precision, Recall, and $F_1$ score have been frequently used as metrics to evaluate the performance of time-series anomaly detection tasks.
+Therefore, we select these three metrics to evaluate the anomaly detection capability of the anomaly detector for water CPS. Precision is the proportion of correctly detected anomalies among predicted anomalies, while Recall is the proportion of actual anomalies correctly identified.
+The $F_1$ score, which is the harmonic mean of Precision and Recall, provides a balanced assessment when both metrics are equally important.
+Given $\mathrm{TP}$ (true positives, correctly detected anomalies), $\mathrm{FP}$ (false positives, normal points misclassified as anomalies), and $\mathrm{FN}$ (false negatives, missed anomalies), these metrics are defined as follows:
+\begin{equation}
+\text{Precision} = \frac{TP}{TP+FP}, \quad \text{Recall} = \frac{TP}{TP+FN},\quad \text{F}_1\ \text{score} = 2\,\frac{\text{Precision}\cdot \text{Recall}}{\text{Precision}+\text{Recall}}.
+\end{equation}
+High Precision means that most detected anomalies are correct, while high Recall implies that most true anomalies have been captured. The $F_1$ score is particularly useful for imbalanced datasets, including those arising in time-series anomaly detection tasks in water infrastructure.
+
+\paragraph{Computational Resource Consumption Metrics}
+Evaluating computational resource efficiency is a core component of \textsc{CE-CPS} because it explicitly quantifies the trade-off between anomaly detection capability and operational overhead, which lies at the heart of the cloud--edge dilemma. In practice, cloud deployments can leverage ample compute to run high-capacity models that maximize accuracy, whereas edge deployments must operate under strict constraints on compute, memory, and thermal budget. A unified efficiency evaluation is therefore required to enable fair comparison across heterogeneous deployment options and to determine when edge execution or selective offloading is most appropriate. Following the \textbf{Green-WSADE} framework integrated into \textsc{CE-CPS}, we measure seven resource-related metrics shown in Table~\ref{tab: Green-WSADE-weights} and compute the CRES, which is further mapped to the intuitive CREG. A lower grade indicates lower resource consumption and higher detection efficiency, and is thus more suitable for resource-constrained scenarios.
+
+
+\subsection{Implementation Details}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\linewidth]{CE-CPS-testbed.png}
+    \caption{The key data pipeline components of the testbed for the CE-CPS architecture.}
+    \label{fig:all_devices}
+\end{figure}
+Given that the cloud--edge dilemma manifests as a trade-off between detection performance and computational consumption in heterogeneous hardware environments, we evaluate CE-CPS along two dimensions: detection performance and computational resource efficiency, as quantified by the Green-WSADE framework, across a set of representative devices. In our experiments, we compare CE-CPS with the Q\_BAIC-AT baseline along both dimensions to demonstrate the advantages of cloud--edge collaborative deployment. As shown in Figure~\ref{fig:all_devices}, CE-CPS is evaluated through a heterogeneous testbed of collaborating devices, while Table~\ref{tab:hardwares} provides detailed hardware specifications.
+Overall, the testbed follows a tiered design. The data streaming server stores and serves raw telemetry from the water CPS, acting as a reliable backbone for large-scale and continuous data ingestion. Two resource-rich servers support the end-to-end data science workflow: one focuses on data pre-processing and stream handling, and the other is dedicated to model analytics and evaluation.
+At the edge, a Raspberry Pi cluster is deployed as resource-constrained edge analytics devices. These devices execute the quantized detector (Q\_BAIC-AT) locally and exchange only alarms or lightweight summaries with the cloud side, enabling low-latency inference while limiting the need to transmit raw signals.
+At the cloud side, an HPC cluster serves as the cloud server to host the full BAIC-AT models and orchestrate collaboration with the edge-side Q\_BAIC-AT instances, thereby enabling cloud--edge cooperative anomaly detection under diverse computational conditions.
+
+To ensure a fair comparison with previous and leading methods, we adopt the same training and testing configuration on both datasets. Following standard unsupervised anomaly detection methods, labels in the training set are never used during model training; labels in the test set are retained only for evaluation. To strengthen the detection performance of the BAIC-AT ensemble, each AIC-AT base learner uses a hidden dimension of 512 with 8 attention heads. Training is performed with the Adam optimizer~\cite{kingma:adam} at a learning rate of $10^{-4}$, and all AIC-AT models are implemented in PyTorch~\cite{paszke2019pytorch}. To increase diversity among the base models, we vary several key hyperparameters across ensemble members, including the number of training epochs $\in \{3, 6, 10\}$, the loss weight $\lambda \in \{3, 4, 5\}$, the batch size $\in \{32, 64, 96\}$, and the number of encoder layers $\in \{3, 6, 8\}$. The BAIC-AT models are converted into Q\_BAIC-AT models by applying A8W4 dynamic quantization, which offers a favorable trade-off between resource efficiency and minimal loss in detection performance~\cite{wang2024low,dong2024eq}. For edge deployment, three Q\_BAIC-AT models are deployed on resource-constrained edge analytics devices, saturating the maximum feasible edge parallelism while keeping the majority voting mechanism robust and reliable. A sufficient number of BAIC-AT models are deployed on the cloud servers to maximize detection accuracy and support collaborative operation with the edge. Within the CE-CPS architecture, a Mahalanobis distance-based routing policy enables collaborative execution between edge devices and cloud servers: initial inference is performed locally to minimize latency and bandwidth consumption, whereas uncertain or safety-critical cases are offloaded to the cloud for higher-capacity analysis.
+
+To improve measurement stability across heterogeneous platforms, we apply the following protocol: (i) we perform a warm-up phase before recording metrics to avoid cold-start effects, and we bind the monitoring process to a fixed CPU core to reduce fluctuations caused by the scheduler; (ii) we record per-process metrics and aggregate over the steady-state experiment for 10 independent runs with fixed random seeds and report mean values; we additionally report the standard deviation for key metrics ($F_1$, CPU, and memory) to quantify run-to-run variability. Our instrumentation is implemented using psutil~\cite{psutil_document}.
+The proposed method is evaluated on SWaT and WADI over ten independent runs, and we report the mean values of the metrics as the final results. The metric weights used in Green-WSADE are summarized in Table~\ref{tab: Green-WSADE-weights}. The seven metrics are assigned broadly comparable weights, with CPU utilization and memory usage given slightly higher importance, and all weights are normalized to sum to one. The result of CE-CPS on the Raspberry Pi 3B+ is used as the reference configuration. Using these weights, we compute the CRES for each deployment mode on all resource-constrained edge devices and then map CRES to a discrete CREG score from 1 to 5.
+
+\begin{table*}
+    \caption{Anomaly detection performance comparison between CE-CPS and other methods on (a) SWaT and (b) WADI datasets, using results reported in the respective references of each method.}
+    \label{tab: main_results}
+    \centering
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{small}
+    \begin{minipage}[t]{0.45\textwidth}
+        \centering
+        \textbf{(a)}  SWaT dataset \\
+        \resizebox{\textwidth}{!}{
+        \begin{tabular}{l|ccc}
+            \toprule
+            Method & P & R & $F_1$  \\
+            \midrule
+            DCdetector~\cite{li2025t} & 97.8 & 70.3 & 82.2 \\
+            T-VAE~\cite{li2025t} & 97.9 & 71.0 & 82.3 \\
+            ConvLSTM~\cite{belay2023unsupervised}& 99.8 &64.3 &78.2\\
+            OC-SVM~\cite{belay2023unsupervised} &95.9 &64.4 &77.1\\
+            VAE~\cite{belay2023unsupervised} &99.6 &64.2 &78.1\\
+            LSTM-VAE~\cite{xu2022anomaly} & 76.00 & 89.50 & 82.20 \\
+            DAGMM~\cite{xu2022anomaly} & 89.92 & 57.84 & 70.40  \\
+            OmniAnomaly~\cite{xu2022anomaly} & 81.42 & 84.30 & 82.83 \\  
+            IsolationForest~\cite{xu2022anomaly} & 49.29 & 44.95 & 47.02 \\
+            Anomaly Transformer~\cite{energyefficient2025yang} & 91.55 & 96.73 & 94.07 \\
+            \midrule
+
+            CE-CPS & \textbf{99.92} & \textbf{100.00} & \textbf{99.96}\\
+            \bottomrule
+        \end{tabular}
+        }
+    \end{minipage}%
+    \hfill
+    \begin{minipage}[t]{0.45\textwidth}
+        \centering
+        \textbf{(b)}  WADI dataset \\
+        \resizebox{\textwidth}{!}{
+        \begin{tabular}{l|ccc}
+             \toprule
+            Method & P & R & $F_1$ \\
+            \midrule
+            DCdetector~\cite{li2025t} & 95.0 & 65.8 & 77.9 \\
+            T-VAE~\cite{li2025t} & 95.1 & 66.5 & 78.3 \\
+            DGLAD~\cite{luo2025dual}  & 93.90 & 77.10 & 84.68\\
+            TranAD~\cite{tuli2022tranad}& 35.29 &82.96 &49.51\\
+            LSTM-VAE~\cite{audibert2020usad} &46.32 &32.20 &37.99 \\
+            DAGMM~\cite{audibert2020usad} &22.28 &19.76 &20.94 \\
+            USAD~\cite{audibert2020usad} &64.51 &32.20 &42.96  \\
+            OmniAnomaly~\cite{audibert2020usad} &26.52 &97.99 &41.74 \\
+            IsolationForest~\cite{audibert2020usad} &62.41 &61.55 &61.98\\
+            Anomaly Transformer~\cite{energyefficient2025yang} & 79.86 & \textbf{100.00} & 88.86 \\
+            \midrule
+            CE-CPS  & \textbf{99.50} & \textbf{100.00} & \textbf{99.75} \\
+            \bottomrule
+        \end{tabular}
+        }
+    \end{minipage}
+    \end{small}
+\end{table*}
+
+
+
+\subsection{Previous Leading Methods}
+We extensively compare our architecture with previous and popular methods, including
+the leading deep learning-based methods: LSTM-VAE~\cite{xu2022anomaly,audibert2020usad,park2018multimodal},
+OmniAnomaly~\cite{xu2022anomaly,audibert2020usad,Omnianomaly2019robust},
+DGLAD~\cite{luo2025dual},
+USAD~\cite{audibert2020usad},
+Anomaly Transformer~\cite{xu2022anomaly,energyefficient2025yang},
+T-VAE~\cite{li2025t},
+VAE~\cite{belay2023unsupervised,kingma2019introduction}, DAGMM~\cite{xu2018unsupervised,audibert2020usad,DAGMM2018deep}, TranAD~\cite{tuli2022tranad}, ConvLSTM~\cite{belay2023unsupervised,shi2015convolutional}, and DCdetector~\cite{li2025t,yang2023dcdetector}. In addition,
+classic shallow methods, including IsolationForest~\cite{xu2022anomaly,audibert2020usad,liu2008isolation} and OC-SVM~\cite{belay2023unsupervised,li2003improving}, are also included for comparison.
+
+
+
+
+\subsection{Results} \label{experiment: result}
+\paragraph{Ensemble BAIC-AT Models Analysis}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\textwidth ]{FscoreOverEnsembleSize.png}
+    \caption{Anomaly detection capability of BAIC-AT models with different ensemble sizes on the SWaT and WADI datasets.}
+    \label{fig: FscoreOverEnsemble}
+\end{figure}
+Figure~\ref{fig: FscoreOverEnsemble} shows how ensemble size affects anomaly detection capability on the SWaT and WADI datasets. With only a single base model, the $F_{1}$ score is already high on SWaT (about $94\%$) but noticeably lower on WADI (about $89\%$), indicating that WADI is more challenging in the small-ensemble regime. As ensemble size increases, both curves exhibit a sharp early gain: the $F_{1}$ score rises rapidly and reaches approximately $99\%$ within the first few ensemble members (around $I\approx 5$). After this knee point, the improvement becomes marginal, and both datasets enter a near-saturation phase. Minor oscillations can still be observed around the plateau, but the overall trend remains stable, with both curves staying very close to $100\%$ as the ensemble size grows up to 80. Overall, increasing ensemble size primarily benefits performance in the early stage, while larger ensembles mainly contribute to steadier, near-peak detection reliability.
+Guided by the above ensemble size sensitivity analysis, we instantiate the cloud BAIC-AT ensemble near the saturation point. Concretely, we set the cloud ensemble size to 51 and 47 for SWaT and WADI, respectively, where performance is close to saturation while unnecessary cloud overhead is avoided.
+
+
+
+\paragraph{Anomaly Detection Capability Analysis}
+As summarized in Table~\ref{tab: main_results}, on the data analytics server, CE-CPS achieves state-of-the-art anomaly detection performance, attaining $F_1$ scores of 99.96\% on SWaT and 99.75\% on WADI with improvements of 5.89 and 10.89 percentage points over the best-performing prior method on each dataset, respectively. On SWaT, CE-CPS attains an \(F_{1}\) score of 99.96\%, substantially outperforming Anomaly Transformer (94.07\%) and AIC-AT (96.32\%), and also exceeding reconstruction- or density-based approaches such as LSTM-VAE (82.20\%), T-VAE (82.3\%), and OmniAnomaly (82.83\%). A similar trend is observed on WADI, where CE-CPS reaches an \(F_{1}\) score of 99.75\%, improving markedly over Anomaly Transformer (88.86\%) and AIC-AT (92.47\%), and surpassing most other baselines whose \(F_{1}\) scores remain below 90\%.
+
+Beyond the aggregate \(F_{1}\), the precision-recall profile further explains why CE-CPS is well-suited to security-critical water CPS monitoring. CE-CPS maintains 100.00\% recall on both datasets, ensuring that no attacks are missed, while also achieving very high precision on both SWaT and WADI. This operating point is practically important because many baselines exhibit a clear precision-recall trade-off: some methods incur substantially lower recall (e.g., DCdetector reports 70.3\% recall on SWaT, and DGLAD reports 77.10\% recall on WADI), which increases the risk of missed attacks. Conversely, Anomaly Transformer reaches 100.00\% recall on WADI but with much lower precision of 79.86\%, implying a higher false-alarm burden. In contrast, CE-CPS preserves the safety-critical property of not missing attacks while significantly reducing false alarms, offering a more deployment-ready operating point.
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\textwidth]{swat_wadi_at_emat_withQuan.png}
+    \caption{Comparison of anomaly detection capabilities of AT, AIC-AT, Quan\_AT, and Quan\_AIC-AT on the (a) SWaT and (b) WADI datasets.}
+    \label{fig: ATandEMAT}
+\end{figure}
+
+
+
+Finally, Figure~\ref{fig: ATandEMAT} provides an interpretation consistent with the model design rationale. Compared with Anomaly Transformer, AIC-AT integrates an EM-based GMM for automated, data-driven threshold selection, eliminating manual calibration and improving \(F_{1}\) on both SWaT and WADI while achieving 100\% recall. Building on this foundation, CE-CPS further combines EM-based decision modeling with the TorchAO-ExecuTorch deployment pipeline and additional system-level enhancements, yielding a detector that is not only more accurate and stable on cloud servers but also more practical in real deployments and better suited to resource-constrained scenarios.
+
+\begin{table*}
+\centering
+\caption{Average computational resource consumption, anomaly detection capability, and final CRES of CE-CPS and Q\_BAIC-AT baseline deployed on Raspberry Pi devices using the SWaT dataset.\label{tab:swat_computational_resource}}
+    \renewcommand\arraystretch{1.1}
+    \resizebox{\textwidth}{!}{
+	\begin{tabular}{cccccccccc}
+        \toprule
+       \textbf{Device}  & \makecell[c]{\textbf{Operation Method}} & \makecell[c]{\textbf{Process CPU} \\ \textbf{Util (\%)}} & \makecell[c]{\textbf{Process Memory} \\ \textbf{Usage (MB)}} & \makecell[c]{\textbf{CPU Temperature} \\ \textbf{($^{\circ}\mathrm{C}$)}} &   \makecell[c]{\textbf{Process I/O} \\ \textbf{read\_count} \\ 
+       \textbf{per sample}}
+       & \makecell[c]{\textbf{Process I/O} \\ \textbf{write\_count} \\ \textbf{per sample}}  & \makecell[c]{\textbf{Execution Method} \\ \textbf{File Size (MB)}} & \makecell[c]{$F_{1}$ \textbf{score(\%)}} & \makecell[c]{\textbf{CRES}}\\
+        \midrule
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{3}{*}{Raspberry Pi 5} 
+            & BAIC-AT  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable\\
+
+            & Q\_BAIC-AT  & 74.11 & 136.14 & 68.52 & 2.08 & 35.67 & 59.47 & 97.34 & 2.00\\
+
+            & CE-CPS  &  73.28 & 135.12 & 66.79 & 2.08 & 35.67 & 59.47 & 99.96 & 1.00\\
+             
+            
+        \specialrule{0em}{1pt}{1pt}
+        \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{3}{*}{Raspberry Pi 4B}     
+
+            & BAIC-AT  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable\\
+
+            & Q\_BAIC-AT  & 74.87 & 134.87 & 52.42 & 2.08 & 35.67 & 59.47 & 97.34 & 2.00\\
+
+            & CE-CPS  &  73.47 & 134.13 & 52.08 & 2.08 & 35.67 & 59.47 & 99.96 & 1.00\\
+             
+             
+        \specialrule{0em}{1pt}{1pt}
+         \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{3}{*}{Raspberry Pi 3B+}     
+
+            & BAIC-AT  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable\\
+
+            & Q\_BAIC-AT & 74.97 & 134.45 & 51.86 & 2.08 & 35.67 & 59.47 & 97.34 &  2.00\\
+
+            & CE-CPS  & 74.08 & 133.83 & 51.17 & 2.08 & 35.67 & 59.47 & 99.96 & 1.00\\
+             
+             
+        \specialrule{0em}{1pt}{1pt} 
+        \bottomrule
+    \end{tabular}
+   }
+\end{table*}
+
+\begin{table*}
+\centering
+\caption{Average computational resource consumption, anomaly detection capability, and final CRES of CE-CPS and Q\_BAIC-AT baseline deployed on Raspberry Pi devices using the WADI dataset.\label{tab:wadi_computational_resource}}
+    \renewcommand\arraystretch{1.1}
+    \resizebox{\textwidth}{!}{
+	\begin{tabular}{cccccccccc}
+        \toprule
+       \textbf{Device}  & \makecell[c]{\textbf{Operation Method}} & \makecell[c]{\textbf{Process CPU} \\ \textbf{Util (\%)}} & \makecell[c]{\textbf{Process Memory} \\ \textbf{Usage (MB)}} & \makecell[c]{\textbf{CPU Temperature} \\ \textbf{($^{\circ}\mathrm{C}$)}} &   \makecell[c]{\textbf{Process I/O} \\ \textbf{read\_count} \\ 
+       \textbf{per sample}}
+       & \makecell[c]{\textbf{Process I/O} \\ \textbf{write\_count} \\ \textbf{per sample}}  & \makecell[c]{\textbf{Execution Method} \\ \textbf{File Size (MB)}} & \makecell[c]{$F_{1}$ \textbf{score(\%)}} & \makecell[c]{\textbf{CRES}}\\
+        \midrule
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{3}{*}{Raspberry Pi 5} 
+            & BAIC-AT  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable\\
+
+            & Q\_BAIC-AT  & 74.15 & 145.39 & 68.70 & 4.14 & 36.07 & 60.87 & 96.76 & 2.00\\
+
+            & CE-CPS  &  73.75 & 144.89 & 68.02 & 4.14 & 36.07 & 60.87 & 99.75 & 2.00\\
+             
+            
+        \specialrule{0em}{1pt}{1pt}
+        \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{3}{*}{Raspberry Pi 4B}     
+
+            & BAIC-AT  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable\\
+
+            & Q\_BAIC-AT   & 74.83 & 144.70 & 56.38 & 4.14 & 36.07 & 60.87 & 96.76 & 2.00\\
+
+            & CE-CPS  &  74.21 & 144.05 & 55.92  & 4.14 & 36.07 & 60.87 & 99.75 & 1.00\\
+             
+             
+        \specialrule{0em}{1pt}{1pt}
+         \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{3}{*}{Raspberry Pi 3B+}     
+
+            & BAIC-AT  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable\\
+
+            & Q\_BAIC-AT  & 74.94 & 144.28 & 51.33 & 4.14 & 36.07 & 60.87 & 96.76 & 2.00\\
+
+            & CE-CPS  & 74.47 & 143.82 & 51.12 & 4.14 & 36.07 & 60.87 & 99.75 & 1.00 \\
+             
+        \specialrule{0em}{1pt}{1pt}
+        \bottomrule
+    \end{tabular}   
+   }
+\end{table*}
+
+\begin{figure*}
+    \centering
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 5 - CE-CPS_SWaT.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 5 - Q_BAIC-AT_SWaT.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 4B - CE-CPS_SWaT.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 4B - Q_BAIC-AT_SWaT.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 3B+ - CE-CPS_SWaT.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 3B+ - Q_BAIC-AT_SWaT.png}
+    } 
+    \caption{Computational resource efficiency grades on the SWaT dataset: (a) CE-CPS---Raspberry Pi 5; (b) Q\_BAIC-AT---Raspberry Pi 5; (c) CE-CPS---Raspberry Pi 4B; (d) Q\_BAIC-AT---Raspberry Pi 4B; (e) CE-CPS---Raspberry Pi 3B+; (f) Q\_BAIC-AT---Raspberry Pi 3B+.}
+    \label{fig: six_swat_rating} 
+\end{figure*}
+
+
+
+\begin{figure*}
+    \centering
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 5 - CE-CPS_WADI.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 5 - Q_BAIC-AT_WADI.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 4B - CE-CPS_WADI.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 4B - Q_BAIC-AT_WADI.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 3B+ - CE-CPS_WADI.png}
+    }
+    \subfigure[]{
+        \includegraphics[width=\eewadWidth]{Raspberry Pi 3B+ - Q_BAIC-AT_WADI.png}
+    }
+    \caption{Computational resource efficiency grades on the WADI dataset: (a) CE-CPS---Raspberry Pi 5; (b) Q\_BAIC-AT---Raspberry Pi 5; (c) CE-CPS---Raspberry Pi 4B; (d) Q\_BAIC-AT---Raspberry Pi 4B; (e) CE-CPS---Raspberry Pi 3B+; (f) Q\_BAIC-AT---Raspberry Pi 3B+.}
+    \label{fig: six_wadi_rating}
+\end{figure*}  
+
+
+\paragraph{Anomaly Investigation Example}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\textwidth]{RAG-LLM-workflow -AdversaryInTheMiddleAttack.png}
+    \caption{An investigation example for the water CPS.}
+    \label{fig: RAG-example}
+\end{figure}
+
+As demonstrated in Figure~\ref{fig: RAG-example}, the module identifies a simple adversary-in-the-middle scenario consistent with ARP-poisoning-based traffic interception, determines the affected assets such as human--machine interfaces, programmable logic controllers, and data historians, and generates actionable mitigation guidance. The resulting output provides operators with a concise yet informative investigation report that includes anomaly characterization, impacted components, and recommended defensive actions. This example highlights how the proposed RAG-based investigation layer transforms raw anomaly alerts into contextualized diagnostic insights, thereby improving situational awareness and supporting timely response in water CPS deployments.
+
+
+\paragraph{Green-WSADE Evaluation Results}
+Leveraging the metric results reported in Tables~\ref{tab:swat_computational_resource} and~\ref{tab:wadi_computational_resource}, we compute the CRES and then derive the corresponding CREG under the Green-WSADE framework to visualize deployment trade-offs. Figures~\ref{fig: six_swat_rating} and~\ref{fig: six_wadi_rating} summarize these efficiency grades for CE-CPS and the pure Q\_BAIC-AT baseline. Beyond the at-a-glance ratings, the underlying CPU, memory, thermal, and I/O metrics explain the practical differences between the two methods on edge devices.
+
+In our evaluation, CE-CPS achieves stronger anomaly detection than Q\_BAIC-AT while keeping the edge-side resource footprint essentially unchanged. On SWaT, as reported in Table~\ref{tab:swat_computational_resource}, CE-CPS maintains CPU utilization in the narrow range of 73--74\% and process memory usage at approximately 134--136~MB. The device temperature remains within 51--67~$^{\circ}\mathrm{C}$ during inference, and CE-CPS attains an $F_{1}$ score of up to 99.96\% on the Raspberry Pi 3B+. Under the same experimental configuration, Q\_BAIC-AT exhibits a similar level of CPU and memory demand, yet leads to a less favorable overall efficiency outcome. This difference is reflected by the Green-WSADE composite score: CE-CPS achieves a CRES of 1.00 on the Raspberry Pi 3B+, whereas Q\_BAIC-AT is rated with a higher CRES of 2. Importantly, CE-CPS does not obtain these gains by altering I/O behavior or shrinking the model artifact. The per-sample I/O activity on SWaT remains at about 2.08 read operations and 35.67 write operations, and the deployed model size stays around 59.47~MB. These observations indicate that the advantage of CE-CPS is primarily driven by execution-level efficiency and system-level collaboration, rather than reduced artifacts or diminished I/O workload.
+
+Table~\ref{tab:wadi_computational_resource} also shows a consistent pattern on the WADI dataset. CE-CPS maintains CPU utilization near 73--75\% and memory usage around 144--146~MB, with CPU temperatures approximately 51--68~$^{\circ}\mathrm{C}$, and delivers stable anomaly detection performance of approximately 99.75\% $F_{1}$ across the three Raspberry Pi devices. As on SWaT, the model file size and I/O counts per sample are effectively constant (approximately 60.87~MB, with roughly 4.14 reads and 36.07 writes per sample), so the observed efficiency gains are not attributable to lighter artifacts. Across both datasets and all devices, CE-CPS matches or slightly improves detection accuracy while reducing overall CRES relative to Q\_BAIC-AT, demonstrating that cloud--edge collaboration can improve deployment efficiency without sacrificing edge feasibility. Moreover, the moderate CPU-temperature profile of CE-CPS supports safer long-term operation on resource-constrained boards, whereas Q\_BAIC-AT---despite running reliably on the same devices---lacks cloud integration for higher-fidelity detection and comprehensive anomaly investigation often required in operational water CPS.
+
+Based on Tables~\ref{tab:swat_computational_resource} and~\ref{tab:wadi_computational_resource}, we further convert CRES into CREG to provide an interpretable efficiency rating for non-expert deployment decisions.
+Figures~\ref{fig: six_swat_rating} and~\ref{fig: six_wadi_rating} show that CE-CPS consistently achieves the top CREG of 1 across all three Raspberry Pi boards on both SWaT and WADI, while Q\_BAIC-AT remains at CREG 2 for every device and dataset. These ratings are a holistic consequence of CE-CPS sustaining modest resource demand on the edge (e.g., 75\% CPU utilization and 150~MB memory usage for an ensemble of three base learners) while preserving high detection performance, thereby offering a clearer and more deployment-ready efficiency--accuracy balance than the pure Q\_BAIC-AT baseline.
+It is important to note that the reported efficiency grades are computed under the default Green-WSADE setting, where the CRES aggregation assigns uniform weights to all metrics. This choice provides a neutral, hardware-agnostic baseline, enabling fair comparison across heterogeneous devices and deployment modes. In practical deployments, however, Green-WSADE is configurable: the weight vector can be tailored to device constraints and operational objectives. For instance, on memory-limited edge nodes, the weight on process memory usage can be increased to penalize deployments that may induce memory pressure, swapping, or instability; conversely, on compute-rich servers, the weight on the $F_1$ score can be increased to emphasize detection effectiveness over marginal resource savings. More broadly, different policy profiles can be adopted to reflect mission priorities, such as energy-aware, thermal-aware, latency-sensitive, or storage-aware weighting schemes. Under these deployment-specific configurations, the efficiency grade becomes a policy-driven assessment aligned with Green-WSADE objectives rather than a one-size-fits-all label. Notably, CE-CPS still achieves strong ratings under the uniform-weight baseline, indicating that its efficiency advantages are not obtained at the expense of water CPS security and detection effectiveness.
+
+
+
+\section{Conclusion}\label{sec: conclusion}
+We propose CE-CPS, a cloud--edge collaborative anomaly behavior analysis architecture for CPS. CE-CPS is built upon the AIC-AT model and instantiated in two variants, BAIC-AT and its quantized counterpart Q\_BAIC-AT. By partitioning computation between resource-constrained edge devices and compute-rich cloud servers, CE-CPS enables anomaly detection that is both accurate and resource efficient. A Mahalanobis distance-based routing policy selectively offloads low-confidence samples to the cloud model for further inference, thereby balancing detection performance against computational and communication overhead. In addition, CE-CPS incorporates an RAG module to support precise, context-aware anomaly investigation.
+The Green-WSADE framework provides a unified evaluation metric that jointly reflects detection capability and computational resource usage, enabling fair comparisons across heterogeneous devices. Experiments on the SWaT and WADI datasets demonstrate that CE-CPS outperforms state-of-the-art baselines, achieving higher $F_1$ scores while substantially reducing resource consumption. Collectively, these results indicate a practical and sustainable pathway for deploying anomaly detection in real-world water-facility systems.
+This study evaluated the performance of CE-CPS on the SWaT and WADI datasets using the officially defined training and testing sets. While SWaT and WADI are community-standard benchmarks, they are limited to scripted, pre-planned attack scenarios under stable operating conditions and do not capture naturally occurring faults, gradual sensor degradation, concept drift, or adaptive adversaries, all of which are likely in real-world deployments. Future work should evaluate CE-CPS under these more challenging conditions. Furthermore, the routing and investigation modules assume the existence of a benign calibration dataset for threshold and uncertainty calibration; future research should explore the problem of distribution shift.
+
+\bibliographystyle{sn-mathphys-num.bst}
+\bibliography{refs}
+
+
+\end{document}
