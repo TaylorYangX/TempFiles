@@ -1,0 +1,673 @@
+\documentclass[pdflatex,sn-mathphys-num]{sn-jnl}
+\usepackage[numbers]{natbib}
+\usepackage[ruled,vlined]{algorithm2e}
+\usepackage{float}  
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{pifont}
+\usepackage{amssymb}
+\usepackage{textcomp,mathcomp}
+\usepackage{gensymb}
+\usepackage{mathrsfs}
+\usepackage{subfigure}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{makecell}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{enumitem}
+\usepackage{makecell}
+\usepackage{subcaption}
+\usepackage{mdframed}
+\usepackage[svgnames]{xcolor} 
+
+\theoremstyle{thmstyleone}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+
+
+\theoremstyle{thmstyletwo}
+\newtheorem{example}{Example}
+\newtheorem{remark}{Remark}
+
+\theoremstyle{thmstylethree}
+\newtheorem{definition}{Definition}
+
+\raggedbottom
+
+
+\begin{document}
+
+\title[Article Title]{Adaptive Edge-Resilient Anomaly Behavior Analysis for CPS}
+
+
+
+\abstract{
+Anomaly detection in cyber-physical systems (CPS) and other safety-critical infrastructure requires continuous and reliable monitoring under strict operational constraints. Centralized inference introduces communication latency, bandwidth overhead, and energy cost, making it poorly suited to resource-constrained field deployments that require continuous, low-latency security monitoring. Edge intelligence offers a practical alternative, but deploying accurate deep learning models on low-power hardware remains difficult because of limited computational throughput, constrained on-chip memory, and strict circuit-level power budgets. To address these constraints, we present the Adaptive Edge-Resilient Anomaly Behavior Analysis for CPS (AEABA-CPS) framework, a unified pipeline for real-time anomaly detection and investigation on resource-limited edge devices. The core detection engine, termed the Anomaly Transformer Ensemble (ATE), integrates a cohort of Anomaly Transformer (AT) base learners, each trained independently on bootstrap-resampled data partitions and aggregated through majority voting, improving detection robustness against noise and distribution shift. For low-power deployment, a quantized variant of the detection engine, Quan\_ATE, is executed efficiently via the ExecuTorch 1.2 runtime and delegated to the XNNPACK backend.
+The deployment pipeline is designed to reduce on-chip memory access frequency and switching activity within arithmetic datapaths, thereby directly reducing dynamic power dissipation during sustained inference.
+Beyond detection, AEABA-CPS employs a Transformer-based classifier agent that processes time-series information to categorize detected anomalies into specific attack types and then links each identified attack to a mitigation workflow that automatically selects and triggers the corresponding response strategy.
+This closed-loop architecture enables edge nodes to move from detection to interpretable and actionable investigation without offloading computation to centralized infrastructure. Empirical evaluation on the SWaT and WADI benchmark datasets demonstrates that AEABA-CPS achieves $F_1$ scores of 97.86\% and 97.02\%, respectively. The framework also maintains ultra-low power consumption and high energy efficiency across target edge devices, supporting its practical suitability for continuous, on-device anomaly monitoring and cyber attack investigation in power-constrained CPS environments.
+}
+
+\keywords{Anomaly Detection, Ensemble, ExecuTorch, XNNPACK}
+
+
+\maketitle
+
+\section{Introduction}\label{sec: introduction}
+Cyber-physical systems (CPS) form the basis of much modern critical infrastructure, including water treatment facilities, power grids, industrial manufacturing plants, and transportation networks. By tightly coupling embedded computation with physical processes through sensor-actuator feedback loops, CPS enable high levels of automation and operational efficiency~\cite{lee2008cyber,rajkumar2010cyber}. This integration also exposes such systems to a broad range of threats, from equipment degradation and process drift to sophisticated cyber intrusions, any of which may lead to severe physical consequences. High-profile incidents such as the 2021 Oldsmar water-treatment attack and the 2015 Ukrainian power-grid breach have shown that adversaries can exploit CPS vulnerabilities to cause real-world harm~\cite{case2016analysis}. In this setting, robust and continuous anomaly detection has become an important safeguard for operational security, safety, and system resilience.
+
+The need for real-time anomaly monitoring is further shaped by the scale and heterogeneity of modern CPS deployments. Industrial control systems often include hundreds of sensors that generate multivariate time-series data at high sampling rates, requiring analysis methods that can capture inter-sensor dependencies and temporal dynamics~\cite{goh2016dataset,mathur2016swat}. Early rule-based and statistical anomaly detectors, including principal component analysis~(PCA), one-class support vector machines~(OC-SVM), and autoregressive models, offer interpretability but have limited capacity to model the non-linear correlations typical of large-scale CPS telemetry~\cite{chandola2009anomaly,scholkopf1999support}. Deep learning has substantially advanced this area, with recurrent neural networks~(RNNs), long short-term memory networks~(LSTMs), autoencoders, and, more recently, Transformer-based architectures showing strong detection performance on established CPS security benchmarks such as SWaT and WADI~\cite{hundman2018detecting,park2018multimodal,xu2022anomaly}.
+
+Transformer architectures, originally developed for natural language processing~\cite{vaswani2017attention}, are well suited to multivariate time-series modelling. Their self-attention mechanism captures long-range temporal dependencies without the sequential bottleneck of recurrent models, and their parallelizable training procedure scales well with data volume. Anomaly Transformer~\cite{xu2022anomaly}, for instance, uses the relationship between association discrepancy and anomaly scores to achieve state-of-the-art results on multiple CPS anomaly detection benchmarks. Nevertheless, full-precision Transformer inference requires large parameter counts and multi-head attention with quadratic complexity, creating major barriers to deployment on resource-constrained edge hardware.
+
+
+Our study is motivated by three interconnected challenges in securing water CPS:
+(1) \textbf{Latency and bandwidth constraints of centralized inference.} Centralized cloud inference architectures impose substantial operational overhead in latency-sensitive CPS contexts. Routing raw sensor data to a remote inference server introduces round-trip communication delays that may exceed the response-time budgets of safety-critical control loops.
+Moreover, transmitting continuous high-frequency sensor streams incurs substantial bandwidth costs and energy expenditure, both of which conflict with the sustainability requirements of large industrial deployments~\cite{shi2016edge,bonomi2012fog}.
+(2) \textbf{Model deployment on low-power edge hardware.} Deploying accurate deep learning models on low-power edge hardware is a difficult engineering challenge. Microcontroller-class and embedded processor-class devices typically provide constrained SRAM, limited floating-point throughput, and strict thermal and power envelopes measured in milliwatts~\cite{warden2019tinyml}. Full-precision (\texttt{FP32}) Transformer inference is infeasible under such constraints, while naive compression strategies, such as unstructured weight pruning, often degrade detection accuracy enough to limit operational utility.
+(3) \textbf{The detection-to-investigation gap.} Anomaly detection alone is insufficient for operational decision support in CPS environments. When a detector flags an anomalous event, operations personnel must rapidly determine its root cause, assess the associated security risk, and select an appropriate remediation action, often under time pressure and with incomplete contextual
+information. Existing deep learning-based detectors are inherently discriminative and provide no explanatory output beyond a binary or scalar anomaly score~\cite{chalapathy2019deep}.
+
+
+In response to these challenges, this paper presents the \textbf{Adaptive Edge-Resilient Intelligence for CPS (AEABA-CPS)} framework, a unified pipeline for real-time anomaly detection and investigation on resource-limited edge devices. The principal contributions are summarized as follows:
+\begin{itemize}
+    \item \textbf{Anomaly Transformer Ensemble (ATE) with majority voting fusion.} We propose an ensemble detection architecture comprising multiple Anomaly Transformer~(AT) base learners, each trained on bootstrap-resampled data partitions and aggregated through majority voting, improving robustness to label noise and temporal distribution shift.
+    \item \textbf{Hardware-aware quantization and edge deployment pipeline.} We derive Quan\_ATE, a quantized variant of the ATE detection engine, through quantization implemented via TorchAO, and execute it using the ExecuTorch runtime. The deployment pipeline is designed to reduce on-chip memory access frequency and switching activity in arithmetic datapaths, thereby directly reducing dynamic power dissipation during sustained inference.
+    \item \textbf{Anomaly investigation for detected anomalies.} We introduce a closed-loop investigation component that activates upon anomaly confirmation. The Transformer employs a sliding window mechanism to organize point-level data into sequences, which are then fed into the Transformer Encoder. Within its attention mechanism, the model captures dependencies between time steps rather than relying solely on single-point statistics. Consequently, the Transformer can identify the specific types of detected anomalies.
+\end{itemize}
+
+\section{Related Work}\label{sec: related}
+The research presented in this paper lies at the intersection of four active areas: anomaly detection in cyber-physical systems, deep learning for time-series analysis, efficient neural network deployment on edge hardware, and knowledge-augmented reasoning for automated investigation. We organize the review accordingly and position AEABA-CPS with respect to the most closely related prior work in each area.
+
+
+\subsection{Anomaly Detection in Cyber-Physical Systems}
+Recurrent neural networks and their gated variants have been widely applied to CPS anomaly detection because they can model sequential dependencies.
+Hundman et al.~\cite{hundman2018detecting} propose an LSTM-based forecasting model combined with a nonparametric dynamic thresholding algorithm for anomaly detection in spacecraft telemetry; their approach achieves competitive performance but is susceptible to vanishing-gradient effects on long sequences.
+Variational autoencoders~(VAE)~\cite{kingma2013auto} learn a compact latent representation of normal system behavior and flag anomalies as observations whose reconstruction probability falls below a learned threshold. Park et al.~\cite{park2018multimodal} combine LSTM encoders with a VAE generative decoder, improving temporal coherence in the latent space for robotic sensor streams. More recent work has explored graph neural networks~(GNNs) to model the explicit topological structure of CPS sensor networks.
+MTAD-GAT~\cite{zhao2020multivariate} learns both temporal and inter-sensor attention weights via a dual-channel graph attention mechanism, capturing relational anomalies that are invisible to independent per-sensor detectors. GDN~\cite{deng2021graph} constructs a graph of sensor dependencies from data and uses graph deviation networks to detect deviations from expected inter-node relationships on the SWaT and WADI testbeds. These approaches demonstrate the value of structural inductive biases; however, their message-passing operations introduce inference latency that is difficult to accommodate on low-power edge processors.
+
+% transformer
+Transformer architectures~\cite{vaswani2017attention} have become a major paradigm for sequence modelling, and their application to time-series anomaly detection has produced state-of-the-art results. Anomaly Transformer~\cite{xu2022anomaly} introduces an association discrepancy measure that uses the distributional difference between learned series-level associations and point-wise prior associations; anomalies are characterized by low association discrepancy because their irregular patterns receive little contextual support from surrounding normal observations. TranAD~\cite{tuli2022tranad} augments a standard Transformer with an adversarial training objective and a focus score mechanism that amplifies reconstruction errors in anomalous regions, improving detection sensitivity on sparse anomalies. 
+PatchTST~\cite{nie2022time} segments time series into non-overlapping patches before applying Transformer attention, reducing the quadratic attention complexity from $\mathcal{O}(L^2)$ to $\mathcal{O}((L/P)^2)$ where $L$ is the sequence length and $P$ is the patch size; this is particularly beneficial for long-horizon industrial sensor streams.
+Despite these advances, no prior Transformer-based anomaly detector has been validated within a complete edge-deployment pipeline under realistic power constraints. AEABA-CPS addresses this gap by combining the association-discrepancy formulation of Anomaly Transformer with ensemble learning and hardware-aware quantization. 
+
+\subsection{Ensemble Methods for Anomaly Detection}
+Ensemble learning has a long history of improving both accuracy and robustness in anomaly detection. Isolation Forest~\cite{liu2008isolation} aggregates an ensemble of random isolation trees and assigns anomaly scores proportional to the average path length required to isolate each observation; its $\mathcal{O}(n \log n)$ training complexity and near-linear inference make it attractive for resource-constrained settings, although it lacks temporal modelling capacity. 
+
+Random subspace methods~\cite{ho1998random} and bootstrap aggregating bagging~\cite{breiman1996bagging} are classical variance-reduction strategies that improve generalization by training multiple learners on resampled data subsets and aggregating their predictions. Their effectiveness for anomaly detection has been demonstrated across diverse domains~\cite{aggarwal2016introduction}, but their application to deep Transformer learners in the CPS context is novel. AEABA-CPS adopts bootstrap resampling to train a cohort of AT base learners and aggregates their binary decisions via majority voting, which is empirically superior to score averaging when individual learners may produce miscalibrated confidence values, as is common in self-supervised anomaly models trained without labelled anomaly examples.
+
+\subsection{Edge Intelligence and Efficient Neural Inference}
+% edge computing
+The case for edge intelligence in time-sensitive applications has been established by seminal works in edge and fog computing.
+Shi et al.~\cite{shi2016edge} describe the main motivation for edge computing in IoT settings: moving computation toward the data source removes round-trip latency to centralized servers and reduces the volume of raw data transmitted over bandwidth-constrained links. Bonomi et al.~\cite{bonomi2012fog} formalize the fog computing paradigm, showing that hierarchical, proximity-aware deployment of compute resources substantially improves both latency and energy efficiency for latency-sensitive industrial applications. Subsequent work has applied these principles specifically to CPS security monitoring, showing that on-device inference can reduce control-loop response times by orders of magnitude compared to cloud-offload architectures~\cite{shi2016edge}. AEABA-CPS is designed to operate at the lowest layer of this hierarchy, executing directly on the sensing node.
+
+The TinyML movement~\cite{warden2019tinyml} has produced a rich ecosystem of tools for deploying neural networks on microcontroller-class hardware, including TensorFlow Lite Micro, CMSIS-NN, and ExecuTorch. TensorFlow Lite Micro targets ARM Cortex-M processors and supports 8-bit integer inference with a minimal runtime footprint below 20kB. CMSIS-NN~\cite{lai2018cmsis} provides hand-optimized neural network kernels for Cortex-M processors, exploiting SIMD instructions to maximize arithmetic throughput per clock cycle. 
+
+
+\begin{table*}[ht]
+\centering
+\caption{Comparison of AEABA-CPS with representative prior work.
+\checkmark~= fully supported; $\circ$~= partially supported;
+$\times$~= not supported.}
+\label{tab:comparison}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{|p{5cm}|p{4cm}|c|c|c|c|}
+\hline
+\textbf{Method} &
+\textbf{Model} &
+\textbf{Ensemble} &
+\textbf{Edge deploy.} &
+\textbf{Power report} &
+\textbf{Investigation} \\
+\hline
+OC-SVM~\cite{scholkopf1999support}       & SVM       & $\times$ & $\circ$ & $\times$ & $\times$ \\
+LSTM-NDT~\cite{hundman2018detecting}       & LSTM      & $\times$ & $\times$ & $\times$ & $\times$ \\
+LSTM-VAE~\cite{park2018multimodal}      & LSTM+VAE  & $\times$ & $\times$ & $\times$ & $\times$ \\
+GDN~\cite{deng2021graph}               & GNN       & $\times$ & $\times$ & $\times$ & $\times$ \\
+MTAD-GAT~\cite{zhao2020multivariate} & GNN+Attn  & $\times$ & $\times$ & $\times$ & $\times$ \\
+TranAD~\cite{tuli2022tranad}          & Transformer & $\times$ & $\times$ & $\times$ & $\times$ \\
+Anomaly-T~\cite{xu2022anomaly} & Transformer & $\times$ & $\times$ & $\times$ & $\times$ \\
+\hline
+\textbf{AEABA-CPS (ours)} & \textbf{Transformer} & \checkmark & \checkmark & \checkmark & \checkmark \\
+\hline
+\end{tabular}
+}
+\end{table*}
+
+Table~\ref{tab:comparison} compares AEABA-CPS with the most closely related prior systems across five dimensions: detection model family, use of ensemble learning, edge deployment validation, power efficiency reporting, and inclusion of an automated investigation component.
+
+\section{Architecture }\label{sec：architecture}
+\subsection{Architecture Overview}
+\begin{figure}
+    \centering
+    \includegraphics[width=\textwidth]{}
+    \caption{The AEABA-CPS framework.}
+    \label{fig: AEABA-CPS}
+\end{figure}
+This section presents an edge-based ensemble anomaly detection framework for CPS. As illustrated in Figure~\ref{fig: AEABA-CPS}, the framework consists of four interconnected modules that form an end-to-end pipeline from data acquisition to deployment evaluation. The data storage module maintains collected CPS data, while the preprocessing module performs feature extraction, normalization, and input construction for downstream detection. The anomaly detector extends AT into an ensemble model, ATE, to identify abnormal patterns in processed time-series data. Finally, the low-power deployment module quantizes the anomaly detector through ExecuTorch and the XNNPACK backend to produce Quan\_ATE, enabling effective anomaly detection on edge devices.
+
+
+
+
+\subsection{Data Storage}
+This module is deployed on edge devices embedded within water CPS, where it provides persistent storage for raw field-collected data. The stored data include physical-layer telemetry, including sensor measurements and actuator operational states, as well as network-side information. All retained data follow an immutability principle: no relabeling, resampling, or post-hoc modification is permitted. This design ensures that downstream preprocessing pipelines, whether executed at the edge or in the cloud, operate on a complete, unaltered, and reproducible record of raw plant data.
+Representative experimental platforms for validating such edge-based data acquisition architectures include the Secure Water Treatment (SWaT) testbed \cite{mathur2016swat} and the Water Distribution (WADI) system \cite{ahmed2017wadi}.
+SWaT and WADI are widely used benchmark platforms for anomaly detection in CPS security research. Both provide raw, multivariate time-series datasets that cover normal operating conditions and periods of deliberate cyber-physical attack. Their ability to capture the coupled dynamics between physical processes and control logic makes them well suited for evaluating detection methods tailored to water CPS environments.
+
+\subsection{Data Pre-processing}
+After data persistence, the preprocessing module transforms raw system data into structured sequential inputs that match the format required by the anomaly detector. This module comprises two functional subcomponents: a feature extractor and a sequence generator. The former mines discriminative features from archived telemetry records, while the latter reorganizes these features into temporally ordered sequences through normalization and segmentation. Together, the two subcomponents standardize sensor signals and controller outputs, producing formatted inputs for the detector.
+
+% feature extractor
+The feature extractor within AEABA-CPS takes as input the historical operational data archived from the water CPS and constructs a unified high-dimensional feature representation for anomaly identification. It focuses on sensor measurements, actuator states, and PLC control-loop metrics, with the objective of establishing a quantitative baseline of normal system behavior against which deviations indicative of potential attacks can be identified. At the feature level, the component extracts information across multivariate time-series dimensions, spanning three categories: (i) continuous physical measurements, including flow rate, water level, pressure, pump rotational speed, and control signals from regulating and motorized valves; (ii) discrete state labels for actuators and switching devices; and (iii) PLC variables associated with control-loop dynamics, comprising process values, target setpoints, and controller output quantities.
+
+%squence generator
+The sequence generator within AEABA-CPS takes the output of the feature extractor as input and transforms the continuous feature stream into structured sequences that conform to the input specifications of the anomaly detector, applying normalization transformations and fixed-length segmentation while preserving the original temporal ordering. The component partitions time-series data using a non-overlapping sliding window strategy designed to capture local temporal dependency structures while maintaining contextual coherence across consecutive segments.
+By establishing an effective mapping between input data formats and the architectural requirements of the detector, the sequence generator provides data adaptation for anomaly detection tasks targeting complex water CPS processes.
+
+
+\subsection{Anomaly Detector}
+\paragraph{ATE}
+To further improve the anomaly detection capability of the LEE-CPS framework, we introduce an ensemble strategy termed ATE, which aggregates multiple independent Anomaly Transformer detectors, each trained on a distinct bootstrapped subsample of the original training data. As the backbone of each base detector, we adopt the Anomaly Transformer~\cite{xu2022anomaly}, a model designed to assign pointwise anomaly scores to multivariate time series $\mathcal{X} = \{x_t\}_{t=1}^{N}$, where $x_t \in \mathbb{R}^{d}$. Built upon a stack of Transformer encoder layers, the architecture replaces the conventional self-attention module with an Anomaly-Attention mechanism. 
+For each temporal position, this mechanism models two complementary association structures: a prior association, which encodes local temporal continuity with respect to adjacent time steps via a learnable Gaussian kernel, and a series association, which captures long-range sequential dependencies derived directly from the data. By contrasting these two association distributions, the model distinguishes anomalous patterns from normal temporal dynamics.
+
+For the $l$-th encoder layer, the forward propagation is:
+\begin{equation}
+\begin{aligned}
+Z^{l} &= \mathrm{Layer\text{-}Norm}\!\left(X^{l-1}+\mathrm{Anomaly\text{-}Attention}\!\left(X^{l-1}\right)\right),\\
+X^{l} &= \mathrm{Layer\text{-}Norm}\!\left(Z^{l}+\mathrm{Feed\text{-}Forward}\!\left(Z^{l}\right)\right),
+\end{aligned}
+\end{equation}
+where $X^{0}$ denotes the embedded raw series, and $X^{l}$ is the hidden representation.
+To model both the prior-association and the series-association, the Anomaly-Attention adopts a two-branch design:
+\begin{equation}
+\begin{aligned}
+Q,K,V,\sigma &= X_{l-1}W_{Q}^{l},\;X_{l-1}W_{K}^{l},\;X_{l-1}W_{V}^{l},\;X_{l-1}W_{\sigma}^{l},\\
+P^{l} &= \left\{\frac{1}{\sqrt{2\pi}\sigma_{i}^{l}}
+\exp\!\left(-\frac{|i-j|^{2}}{2(\sigma_{i}^{l})^{2}}\right)\right\}_{j=1}^{N},\\
+S^{l} &= \mathrm{Softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_{model}}}\right),\\
+X^{l} &= S^{l}V,
+\end{aligned}
+\end{equation}
+where $P^{l}$ is the (Gaussian) prior-association and $S^{l}$ is the learned series-association.
+The association discrepancy is defined by the symmetrized KL divergence:
+\begin{equation}
+\mathrm{AssDis}(P,S;X)=
+\left[
+\frac{1}{L}\sum_{l=1}^{L}\Big(\mathrm{KL}(P^{l}_{i,:}\|S^{l}_{i,:})+\mathrm{KL}(S^{l}_{i,:}\|P^{l}_{i,:})\Big)
+\right]_{i=1,\cdots,N}.
+\end{equation}
+Let $\hat{X}$ be the reconstruction of $X$. The total loss combines reconstruction and association discrepancy:
+\begin{equation}
+L_{Total}(\hat{X},P,S;X)=\|X-\hat{X}\|_{F}^{2}-\lambda\|\mathrm{AssDis}(P,S;X)\|_{1},
+\end{equation}
+where $\lambda$ trades off the two terms. The minimax strategy is implemented by two alternating phases:
+\begin{equation}
+\begin{aligned}
+\textbf{Minimize Phase: } & L_{Total}(\hat{X},P,S^{detach},-\lambda;X),\\
+\textbf{Maximize Phase: } & L_{Total}(\hat{X},P^{detach},S,\lambda;X),
+\end{aligned}
+
+\end{equation}
+where $^\ast detach$ stops gradient backpropagation for the detached association. At inference time, the point-wise anomaly score is:
+\begin{equation}
+\mathrm{E}(X)=
+\mathrm{Softmax}\!\big(-\mathrm{AssDis}(P,S;X)\big)
+\odot
+\left[\|X_{i,:}-\hat{X}_{i,:}\|_{2}^{2}\right]_{i=1,\cdots,N},
+\end{equation}
+where $\odot$ is the element-wise multiplication.
+
+Prediction variance in ensemble learning is reduced by constructing multiple learners over bootstrap-sampled subsets of the original data and aggregating their outputs. As outlined in Algorithm~\ref{alg: bagged_train} and Figure~\ref{fig: bagging}, ATE instantiates $I$ base AT detectors $\{b_i\}_{i=1}^{I}$ from a clean training corpus $\mathcal{D}$ containing $n$ samples. For each index $i\in\{1,\dots,I\}$, a bootstrap replica $\mathcal{D}_i = \{z_{i,1},\dots,z_{i,n}\}$ of size $n$ is drawn with replacement from $\mathcal{D}$, and the corresponding base learner $b_i$ is optimized on this replica.
+
+To further decorrelate base learners beyond the diversity introduced by bootstrap sampling, ATE stochastically varies key hyperparameters, specifically the mini-batch size and the loss weighting coefficient $\lambda$, independently for each learner during training.
+
+At inference time, each base detector produces a continuous anomaly score $s_i(x)$ for a given input $x$, which is then binarized into a detection decision $\hat{y}_i(x) \in \{0, 1\}$ by comparison with a per-learner threshold $\tau_i$. This threshold is calibrated from the anomaly score distribution that the $i$-th base learner induces over the training set:
+\begin{equation}
+    \hat{y}_i(x) = \mathrm{1}\left[s_i(x) \geq \tau_i\right].
+\end{equation}
+The final prediction is obtained by applying majority voting to the $I$ individual decisions:
+\begin{equation}
+    \hat{y}(x) = \mathrm{1}\!\left[\frac{1}{I}\sum_{i=1}^{I}\hat{y}_i(x) \geq \frac{1}{2} \right].
+\end{equation}
+A query sample $x$ is designated anomalous only when a strict majority of base learners independently reach this conclusion, which reduces the sensitivity of the global decision to threshold miscalibration in any individual learner. This property is important for operational deployment in infrastructure security monitoring, where sustained false alarms can undermine operator confidence and undetected intrusions may cause severe physical consequences.
+
+\begin{algorithm}[t]
+    \caption{ATE Training}\label{alg: bagged_train}
+    \DontPrintSemicolon
+    \SetKwProg{Fn}{function}{}{}
+    \SetKwFunction{Bootstrap}{RandomSampleReplacement}
+    \SetKwFunction{Fit}{AT}
+    
+    \Fn{\texttt{Train ATE}$(A,\; I,\; n)$}{
+        \tcp{$A$: training data;\; $I$: number of iterations;\; $n$: Bootstrap sample size}
+        $B \gets \emptyset$ \tcp*{container for base AT models}
+        
+        \For{$i \gets 1$ \KwTo $I$}{
+            $A_i \gets \Bootstrap(n,\; A)$ \tcp*{Bootstrap sampling}
+            $B_i \gets \Fit(A_i)$ \tcp*{Train AT base model}
+
+        }
+        
+        \KwRet $B$ \tcp*{return ATE $B$=$\{b_1,\dots,b_I\}$}
+    }
+\end{algorithm}
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Bagging.png}
+    \caption{The inference process of Quan\_ATE.}
+    \label{fig: bagging}
+\end{figure}
+
+\paragraph{Quan\_ATE} 
+\begin{figure} 
+    \centering
+    \includegraphics[width=0.8\textwidth]{Figures/executorch_xnnpack_architecture.pdf}
+    \caption{The process of building and running ExecuTorch with XNNPACK Backend.}
+    \label{fig: executorch-xnnpack_backend}
+\end{figure}   
+To enable anomaly inference on edge devices, the ATE model must be converted into an executable format (Quan\_ATE) that supports efficient on-device inference within strict circuit-level power and area budgets. As illustrated in Figure~\ref{fig: executorch-xnnpack_backend}, we adopt a two-stage deployment pipeline designed to minimize dynamic power dissipation and memory footprint. 
+
+\textbf{Ahead-of-Time Compilation and Lowering.}
+The trained ATE model is first subjected to post-training quantization via the \texttt{XNNPACKQuantizer}, which applies symmetric per-channel integer quantization to all eligible operators, yielding a quantized representation Quan\_ATE with lower arithmetic precision and reduced memory bandwidth demands~\cite{xnnpack2019}.
+The quantized model is subsequently exported through the ExecuTorch compilation pipeline.
+Specifically, the \texttt{XnnpackPartitioner} traverses the exported computational graph and identifies operator subgraphs that are lowerable to the XNNPACK backend, using both module-level \texttt{source\_fn\_stack} metadata and fine-grained operator targets to maximize delegation coverage.
+Before serialization, a set of graph transformation passes is applied to the partitioned subgraphs: a channels-last reshape pass reorders tensor memory layouts to satisfy the input format requirements of XNNPACK; a Conv1d-to-Conv2d transformation expands one-dimensional convolutions into their two-dimensional counterparts to unlock additional XNNPACK kernel paths; and a convolution-batch-normalization fusion pass absorbs batch normalization parameters into the preceding convolution weights, removing the associated runtime overhead.
+The pre-processed subgraphs are then serialized into a compact flatbuffer binary (\texttt{.pte} file) whose schema directly mirrors the graph-level API of XNNPACK. At runtime, the execution graph can therefore be reconstructed by issuing successive API calls with the stored arguments, with no further graph analysis required on-device~\cite{Executorch_document}.
+
+\textbf{On-Device Runtime Execution.}    
+At deployment time, the ExecuTorch runtime loads the \texttt{.pte} artifact and invokes the XNNPACK delegate's \texttt{init} routine, which deserializes the flatbuffer blobs and constructs the XNNPACK execution graph by instantiating the required operators and intermediate tensors~\cite{Executorch_document}. During this initialization phase, XNNPACK performs weight packing to arrange static parameters (weights and biases) into hardware-friendly memory layouts optimized for the target ISA (ARM NEON, x86 AVX, etc.); the original unpackaged weight copies are then released to reduce peak memory occupancy. Once initialization is complete, each inference query triggers the execute routine, which binds the input and output tensor buffers and dispatches the pre-built XNNPACK runtime graph, delivering low-latency, CPU-accelerated anomaly scoring within the resource constraints of the embedded anomaly detection unit.
+
+Compared with earlier edge deployment configurations that relied on ExecuTorch~0.3 with TorchAO quantization and fixed single-threaded execution, the inference stack adopted in this work incorporates three targeted upgrades that improve on-device throughput and latency. 
+
+First, migrating from ExecuTorch~0.3 to \textbf{ExecuTorch~1.2} provides a more mature runtime with reduced operator dispatch overhead, improved memory planning, and a more stable delegate ABI, all of which lower the per-inference latency floor independent of the backend in use. 
+Second, replacing the TorchAO-only quantization path with the \textbf{XNNPACK delegate} offloads operator execution to a highly optimized, architecture-aware kernel library that exploits hardware SIMD units through hand-tuned assembly routines~\cite{xnnpack2019}.
+Unlike TorchAO, which operates at the Python and ATen level and applies quantization as a graph transformation without architecture-specific kernel dispatch, the XNNPACK delegate serializes the partitioned subgraph ahead-of-time into a flatbuffer binary and reconstructs a native execution graph at runtime via successive XNNPACK API calls, eliminating interpreter overhead and enabling weight packing that further reduces memory bandwidth consumption during inference.
+Third, replacing the fixed single-thread configuration with \textbf{device-adaptive multi-threaded execution}, where the thread count is set at runtime to match the number of available big cores on the target device, allows the parallelizable portions of the XNNPACK runtime graph to use the available compute resources. On multi-core edge platforms such as Jetson Orin Nano and Raspberry Pis, this alone provides a near-linear throughput gain over the single-threaded baseline for compute-bound operators such as fully-connected layers and depthwise convolutions.
+Together, these three enhancements ensure that the Quan\_ATE model meets the real-time latency requirements of the anomaly detection unit without relaxing accuracy constraints.
+
+
+
+\subsection{Anomaly Investigation}      
+\begin{figure}
+    \centering
+    \includegraphics[width=\textwidth]{Figures/InvestigationAgent.png}
+    \caption{The investigation workflow.}
+    \label{fig: investigation}
+\end{figure}
+In CPS anomaly investigation, anomaly detection and attack attribution are tasks with different levels of complexity. While anomaly detection focuses on identifying whether abnormal behavior occurs within a given time interval, which is achieved using Quan\_ATE, the subsequent step of determining the root cause requires a more structured and interpretable investigation process. 
+To address this, we design a rule-based investigation agent that operates on anomalous segments flagged by the upstream detector. Inspired by recent agent-oriented frameworks, the proposed agent integrates classification, decision-making, and mitigation into a unified workflow. Specifically, the agent first performs structured analysis over the anomalous data and then triggers corresponding response strategies based on predefined rules and model outputs.
+
+As illustrated in Figure~\ref{fig: investigation}, the investigation agent processes fixed-length sliding windows extracted from the multivariate time series. For each window of shape $T \times F$, the agent applies a feature projection module to map the input into a latent representation space, followed by temporal encoding to preserve sequential dependencies. A Transformer-based reasoning module is then used to capture complex temporal correlations and generate a probability distribution over candidate attack types.
+Building upon this probabilistic output, the agent incorporates a rule-based decision layer, where confidence thresholds and domain-specific heuristics are used to refine predictions. Concretely, if the maximum predicted probability exceeds a predefined threshold $\tau$, the corresponding attack type is assigned; otherwise, the agent classifies the instance as unknown\_attack, thereby avoiding unreliable attribution.
+
+Beyond classification, the agent connects to a mitigation workflow, where each identified attack type is mapped to a predefined response policy. These policies may include alert generation, system isolation, parameter reconfiguration, or further forensic analysis. For anomalous segments, the agent aggregates window-level decisions to infer the dominant attack type and then triggers the most appropriate mitigation strategy.
+
+This agent-based, rule-driven design decouples anomaly detection from downstream investigation and response, enabling modular optimization and flexible deployment. Moreover, the rule-based layer improves interpretability and controllability, which are critical properties in security-sensitive CPS environments.
+
+
+
+
+\begin{table*}[!t]
+\centering
+\caption{Attack types based on the specific hardware components the attacker targeted in the testbeds~\cite{feng2019systematic,imanpourgoorabzarmakhidata}.}
+\label{tab: attack_categories}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{|p{2.8cm}|p{3.5cm}|p{3.5cm}|p{8cm}|}
+\hline
+\textbf{Attack Category} & \textbf{Description} & \textbf{Consequence} & \textbf{Mitigation (MITRE ATT\&CK ICS)}\\
+\hline
+
+Physical Manipulation
+& Physically altering valve states to misdirect water flow, simulate pipeline leaks, or cut off distribution lines.
+& Tank overflows, reservoir contamination with untreated water, and denial of service to consumers.
+& \textbf{M0801} Access Management: Restrict physical access to field devices and valves. \textbf{M0804} Human User Authentication: Require authentication for local and remote actuation. \textbf{M0811} Redundancy of Service: Deploy backup actuators for critical control points.\\
+\hline
+
+\makecell[l]{Control Override \\ and Manipulation}
+& Hijacking control logic to force pumps and pressure controllers into unsafe states, such as operating against closed valves.
+& Physical infrastructure damage (e.g., pipe bursts) and unauthorized pressure modulation.
+& \textbf{M0800} Authorization Enforcement: Apply RBAC to restrict control logic modification. \textbf{M0947} Audit: Perform integrity checks on PLC programs and controller configurations. \textbf{M0802} Communication Authenticity: Authenticate control messages to prevent unauthorized commands (T0855).\\
+\hline
+
+\makecell[l]{Sensor Tampering \\ and Manipulation}
+& Falsifying liquid level sensor readings to mislead the control system into forcing overfilling or unalarmed draining.
+& Stealthy reservoir draining, undetected tank overflows, and pump damage from false operating conditions.
+& \textbf{M0810} Out-of-Band Communications: Cross-validate sensor data via independent channels. \textbf{M0802} Communication Authenticity: Authenticate sensor data streams to detect spoofed readings. \textbf{M0947} Audit: Periodically verify sensor calibration and firmware integrity.\\
+\hline
+
+\makecell[l]{Instrumentation \& \\ Measurement \\ Manipulation}
+& Altering readings from flow meters and water quality analyzers (conductivity, turbidity) to disrupt chemical dosing.
+& Chemical contamination of water supply through overdosing, or failure to treat raw water to quality standards.
+& \textbf{M0802} Communication Authenticity: Authenticate measurement device communications. \textbf{M0937} Filter Network Traffic: Use DPI firewalls to detect anomalous instrumentation protocol messages. \textbf{M0810} Out-of-Band Communications: Use redundant measurement paths to validate analyzer readings.\\
+\hline
+
+\makecell[l]{Disabling and \\ Enabling Functions}
+& Strategically disabling components such as chemical injection pumps to bypass critical process stages.
+& Cessation of water treatment, leading to distribution of untreated or unsafe water.
+& \textbf{M0800} Authorization Enforcement: Restrict enable or disable commands to authorized operators only. \textbf{M0811} Redundancy of Service: Maintain standby components for critical treatment functions. \textbf{M0947} Audit: Monitor and log all component state changes for anomaly detection.\\
+\hline
+
+\end{tabular}
+}
+\end{table*}
+Table~\ref{tab: attack_categories} categorizes the five principal attack types identified across the CPS water treatment testbeds, characterizing each by its targeted hardware component, operational consequence, and a set of countermeasures grounded in the MITRE ATT\&CK for ICS framework~\cite{mitre_attack_ics}. The taxonomy spans the adversarial surface of a water distribution system, ranging from direct physical manipulation of valves and actuators to instrumentation spoofing that undermines chemical dosing and quality assurance. Each attack category is linked to concrete MITRE ICS mitigations, including Authorization Enforcement (M0800), Communication Authenticity (M0802), Out-of-Band Communications (M0810), and Redundancy of Service (M0811), which represent security controls derived from real-world ICS incidents and are designed to address adversary behaviors at the field-device level of the Purdue reference model.
+
+
+\section{Experiment}
+\subsection{Dataset}
+\begin{table}[h!] 
+\centering
+\caption{Descriptive Statistics of the SWaT and WADI Datasets.}
+\label{tab:dataset_summary}
+\small
+\begin{tabularx}{\linewidth}{XXX}
+\toprule
+\textbf{Datasets} & \textbf{SWaT} & \textbf{WADI} \\ 
+\midrule
+Features & 51 & 123 \\ 
+Train &  495,000 &  1,048,571\\ 
+Test &  449,919 & 172,801 \\ 
+Anomaly rate(\%) & 12.1 & 5.99 \\   
+\bottomrule
+\end{tabularx}
+\end{table}
+The AEABA-CPS framework proposed in this work is benchmarked on two widely used testbed datasets: SWaT and WADI. Table~\ref{tab:dataset_summary} summarizes the principal characteristics of both datasets. 
+For each dataset, the training partition corresponds exclusively to fault-free operating conditions, whereas the test partition spans a subsequent observation window that interleaves nominal behavior with adversarial attack scenarios. We adopt the official train-test splits published by the respective testbed operators~\cite{ahmed2017wadi, mathur2016swat}, enabling direct and fair comparisons with prior work conducted on these benchmarks.
+
+
+
+\subsection{Evaluation Metric}
+\paragraph{Anomaly Detection Performance Metrics}
+In several influential prior works, including Anomaly Transformer~\cite{xu2022anomaly} and USAD~\cite{audibert2020usad}, precision, recall, and the $F_1$ score have been established as the primary evaluation metrics for assessing the performance of time-series anomaly detection systems.
+
+Following this convention, the present study adopts these three metrics to evaluate anomaly detectors designed for water CPS security. Precision characterizes the exactness of the detection output, quantifying the proportion of truly anomalous points among all instances flagged as anomalous. Recall measures the coverage of the detector, reflecting the fraction of all genuine anomalies that are successfully identified. The $F_1$ score, defined as the harmonic mean of precision and recall, provides a balanced performance measure in evaluation settings where equal weight is assigned to both criteria.
+
+Given \mathrm{TP} (true positives: correctly identified anomalous points), \mathrm{FP} (false positives: normal points incorrectly classified as anomalous), and \mathrm{FN}(false negatives: genuine anomalies that go undetected), the three metrics are formally defined as follows:
+\begin{equation}
+\text{Precision} = \frac{TP}{TP+FP}, \qquad \text{Recall} = \frac{TP}{TP+FN},\qquad F_1 = 2\frac{\text{Precision}\cdot \text{Recall}}{\text{Precision}+\text{Recall}}.
+\end{equation}
+A high precision value indicates that most flagged points correspond to genuine anomalies, reflecting a low false alarm rate. A high recall value indicates strong anomaly coverage, with missed detections effectively suppressed. The $F_1$ score is useful under class-imbalanced data distributions, which are common in time-series anomaly detection for water infrastructure security, where anomalous observations typically constitute only a small fraction of the overall dataset.
+
+For each dataset, the training partition corresponds exclusively to fault-free operating conditions, whereas the test partition spans a subsequent observation window that interleaves nominal behavior with adversarial attack scenarios. We adopt the official train-test splits published by the respective testbed operators~\cite{ahmed2017wadi, mathur2016swat}, thereby enabling direct and fair comparisons with prior work conducted on these benchmarks. 
+
+Ground-truth labels are provided by the testbed operators and are derived primarily from documented attack intervals and operator-verified anomalous windows. Nevertheless, this segment-level labeling scheme has inherent limitations: 
+(i) scripted attack sequences offer only partial coverage and may not reflect the full diversity of real-world adversarial behavior; 
+(ii) the temporal boundaries of label windows can be ambiguous due to transient process dynamics; and 
+(iii) real deployment environments may additionally involve concept drift, sensor noise, and operating-mode transitions triggered by maintenance activities, all of which fall outside the scope of static benchmark annotations.
+These factors should be considered when interpreting the experimental results reported here; the associated threats to validity are discussed further in subsequent sections.
+
+
+\paragraph{Resource Consumption Metrics}
+\begin{table*}
+\centering
+\caption{Energy Consumption Metrics of Inference Process.}
+\label{tab: energy_metrics}
+%\small
+\resizebox{\textwidth}{!}{
+\begin{tabular}{|p{4.3cm}|p{11cm}|}
+\toprule
+\textbf{Metric} & \textbf{Allocation} \\
+\midrule
+Process CPU Utilization & CPU usage during inference, indicating computational intensity. \\
+\midrule
+Process Memory Usage & RAM consumption, reflecting memory-related energy cost. \\
+\midrule
+CPU Temperature & Thermal indicator correlated with power consumption. \\
+\midrule
+Model File Size & Model storage footprint affecting loading and resource usage. \\
+\midrule
+Inference Power & Direct measurement of average power consumption during inference. \\
+\midrule
+Inference Time Per Sample & Latency per sample, reflecting efficiency and energy cost. \\
+\bottomrule
+\end{tabular}
+}
+\end{table*}
+To evaluate energy efficiency during inference, we adopt a set of system-level and model-level metrics that collectively reflect computational cost and power consumption. Table~\ref{tab: energy_metrics} summarizes these metrics.
+Together, these metrics provide a comprehensive evaluation of model energy consumption and inference efficiency.
+
+
+\subsection{Hardware Setup}
+\begin{table*}
+\centering
+\caption{Detailed Hardware Specification of the testbed for AEABA-CPS.} \label{tab:hardwares}
+\renewcommand\arraystretch{1.8}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{|p{3cm}|p{5cm}|c|c|p{3cm}|c|}
+\hline
+\textbf{Device} & \textbf{CPU Specification} & \textbf{RAM} & \textbf{Storage} & \textbf{GPU} & \textbf{OS} \\
+\hline
+Raspberry Pi 3B+ &Broadcom BCM2837B0, quad-core Cortex-A53 64-bit SoC @ 1.4GHz & 1GB & 128GB MicroSD & - & Ubuntu 20.04.5 LTS \\
+\hline
+Raspberry Pi 4B & Broadcom BCM2711, quad-core Cortex-A72 64-bit SoC @ 1.8GHz & 8GB & 128GB MicroSD & - & Ubuntu 20.04.5 LTS \\
+\hline
+Raspberry Pi 5 & Broadcom BCM2712, quad-core Cortex-A76 64-bit SoC @ 2.4GHz & 8GB & 128GB MicroSD & - & Ubuntu 20.04.5 LTS \\
+\hline
+Jetson Orin Nano & 6-core Arm Cortex-A78AE v8.2 64-bit CPU 1.5MB L2 + 4MB L3 & 8GB & 128GB MicroSD &NVIDIA Ampere architecture with 1024 CUDA cores and 32 tensor cores & Ubuntu 22.04.5 LTS \\
+\hline
+\end{tabular}
+}
+\end{table*}
+The experimental evaluation was conducted on representative edge devices with different computational capabilities. Specifically, we used Raspberry Pi 3B+, Raspberry Pi 4B, and Raspberry Pi 5, all equipped with ARM-based quad-core processors and running Ubuntu 20.04.5 LTS, with memory configurations ranging from 1GB to 8GB. 
+We also included the NVIDIA Jetson Orin Nano platform, which features a 6-core ARM Cortex-A78AE CPU and an integrated NVIDIA Ampere GPU with 1024 CUDA cores and 32 Tensor cores, running Ubuntu 22.04.5 LTS. All devices were configured with 128GB of storage via MicroSD cards. This hardware setup enables evaluation of edge anomaly detection performance across low-power and high-performance embedded systems.
+
+
+
+\subsection{Implementation Details}
+To maintain consistency across comparative analyses, our evaluation framework uses identical experimental settings on both benchmark datasets. In accordance with standard practice in unsupervised anomaly detection, the training phase operates under label-free conditions, where ground-truth annotations are unavailable. Ground-truth labels are used only during the test phase for quantitative performance assessment. 
+Both datasets follow a unified experimental configuration with consistent hyperparameter settings. The training procedure follows the unsupervised learning paradigm, where no labeled information is accessible. Ground-truth annotations are withheld until the evaluation stage and serve solely for computing performance metrics.
+
+To improve the detection capability of ATE, each AT base learner uses hidden layer dimensions of 512 and 8 attention heads. The training process employs the Adam optimizer~\cite{kingma:adam} with a learning rate set to $10^{-4}$. All AT model implementations are built upon the PyTorch deep learning framework~\cite{paszke2019pytorch}. 
+To introduce diversity among base learners within the ensemble, we systematically vary key hyperparameters across different ensemble members: loss weight coefficient $\lambda \in \{3, 4, 5\}$, mini-batch size selected from $\{32, 64, 96\}$.
+To ensure direct comparability with the benchmark established in~\cite{xu2022anomaly,audibert2020usad}, we adopt the same evaluation protocol proposed therein. Because anomalous events in practice tend to appear as temporally contiguous segments rather than isolated observations, this protocol incorporates a segment-level adjustment strategy: provided that at least one time step within a continuous anomalous segment is correctly identified by the model, all remaining time steps within that segment are retrospectively credited as true positives, irrespective of their original prediction outcomes.
+
+The ATE model is then compressed into Quan\_ATE via the PT2E quantization flow of the XNNPACK backend and the ExecuTorch 1.2 framework; this approach achieves a favorable balance between computational efficiency and limited degradation in detection performance. To identify the optimal trade-off between detection accuracy and computational overhead, we conduct a systematic evaluation of the \textit{Quan\_ATE} model across three candidate ensemble sizes $M \in \{3, 4, 5\}$, from which the most suitable configuration is selected for deployment. This design rationale serves a dual purpose: it uses the parallel processing capacity available on edge platforms while preserving the robustness and decision reliability of the majority-voting aggregation scheme across diverse attack scenarios.
+
+
+To implement accurate anomaly investigation, we adopt the Transformer-based framework for multivariate time-series representation learning proposed by Zerveas et al.~\cite{zerveas2021transformer} as the core of the investigation agent. This framework uses a Transformer encoder architecture coupled with an unsupervised pre-training scheme, in which the model is trained to reconstruct randomly masked input features across time steps. The pre-training objective encourages the model to capture both local temporal patterns and long-range dependencies among sensor channels, yielding contextual representations of multivariate time series without requiring labeled data.
+Based on the list of attacks within the SWaT dataset~\cite{mathur2016swat}, we designed a multi-dimensional classification system that categorizes attacks across three dimensions, attack targets (sensor and actuator types), attack mechanisms (value manipulation and state switching), and physical intent (hazard types), resulting in a total of 11 distinct categories.
+
+
+\subsection{Previous and Leading Methods}
+AEABA-CPS is compared against previous leading and widely used methods, including deep learning-based methods: LSTM-VAE\cite{xu2022anomaly,audibert2020usad,park2018multimodal}, 
+OmniAnomaly\cite{xu2022anomaly,audibert2020usad,Omnianomaly2019robust},
+DGLAD\cite{luo2025dual},
+USAD\cite{audibert2020usad}, 
+Anomaly Transformer\cite{xu2022anomaly,energyefficient2025yang}, 
+T-VAE\cite{li2025t},
+VAE\cite{belay2023unsupervised,kingma2019introduction}, DAGMM\cite{xu2018unsupervised,audibert2020usad,DAGMM2018deep}, TranAD\cite{tuli2022tranad}, ConvLSTM\cite{belay2023unsupervised,shi2015convolutional}, and DCdetector\cite{li2025t,yang2023dcdetector}. In addition, 
+the classic shallow methods, including IsolationForest\cite{xu2022anomaly,audibert2020usad,liu2008isolation},OC-SVM\cite{belay2023unsupervised,li2003improving}, were also compared.
+Results for all baseline methods are taken from their respective references. The non-quantized ATE ensemble is also included as a direct ablation baseline to quantify the overhead of quantization compression.
+
+
+\subsection{Results}  
+\paragraph{Anomaly Detection Performance Analysis}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\textwidth]{Figures/ensemble_size_comparison.png}
+    \caption{Anomaly detection performance comparison between different ensemble sizes of Quan\_ATE model.}
+    \label{fig: different-ensemble-size}
+\end{figure}
+As illustrated in Figure~\ref{fig: different-ensemble-size}, detection performance consistently improves with ensemble size on both the SWaT and WADI datasets. Specifically, increasing the ensemble from size 3 to size 4 yields a noticeable gain across all evaluation metrics, particularly in the $F_1$ score, which reflects a more balanced improvement between precision and recall. The performance gain from size 4 to size 5 becomes marginal, indicating diminishing returns as the ensemble size further increases. Notably, the $F_1$ score gap between size 3 and size 4 is significantly larger than that between size 4 and size 5 on both datasets. Considering the trade-off between detection performance and computational cost, we select an ensemble size of 4 for practical deployment, as it achieves near-optimal accuracy while maintaining reasonable efficiency.
+\begin{table*}
+    \caption{Anomaly detection performance comparison between the AEABA-CPS framework and baseline methods on the SWaT and WADI datasets. Results for baseline methods are taken from their respective references.}
+    \label{tab: main_results}
+    \centering
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{small}
+    \begin{minipage}[t]{0.45\textwidth}
+        \centering
+        \textbf{(a)}  SWaT dataset \\
+        \resizebox{\textwidth}{!}{
+        \begin{tabular}{l|ccc}
+            \toprule
+            Method & P & R & $F_1$  \\
+            \midrule
+            DCdetector~\cite{li2025t} & 97.8 & 70.3 & 82.2 \\
+            T-VAE~\cite{li2025t} & 97.9 & 71.0 & 82.3 \\
+            ConvLSTM~\cite{belay2023unsupervised}& 99.8 &64.3 &78.2\\
+            OC-SVM~\cite{belay2023unsupervised} &95.9 &64.4 &77.1\\
+            VAE~\cite{belay2023unsupervised} &99.6 &64.2 &78.1\\
+            LSTM-VAE~\cite{xu2022anomaly} & 76.00 & 89.50 & 82.20 \\
+            DAGMM~\cite{xu2022anomaly} & 89.92 & 57.84 & 70.40  \\
+            OmniAnomaly~\cite{xu2022anomaly} & 81.42 & 84.30 & 82.83 \\  
+            IsolationForest~\cite{xu2022anomaly} & 49.29 & 44.95 & 47.02 \\
+            Anomaly Transformer~\cite{energyefficient2025yang} & 91.55 & 96.73 & 94.07 \\
+            \midrule
+            \textbf{AEABA-CPS(ours)} &  \textbf{98.99} & \textbf{96.75} & \textbf{97.86} \\
+            \bottomrule
+        \end{tabular}
+        }
+    \end{minipage}%
+    \hfill
+    \begin{minipage}[t]{0.45\textwidth}
+        \centering
+        \textbf{(b)}  WADI dataset \\
+        \resizebox{\textwidth}{!}{
+        \begin{tabular}{l|ccc}
+             \toprule
+            Method & P & R & $F_1$ \\
+            \midrule
+            DCdetector~\cite{li2025t} & 95.0 & 65.8 & 77.9 \\
+            T-VAE~\cite{li2025t} & 95.1 & 66.5 & 78.3 \\
+            DGLAD~\cite{luo2025dual}  & 93.90 & 77.10 & 84.68\\
+            TranAD~\cite{tuli2022tranad}& 35.29 &82.96 &49.51\\
+            LSTM-VAE~\cite{audibert2020usad} &46.32 &32.20 &37.99 \\
+            DAGMM~\cite{audibert2020usad} &22.28 &19.76 &20.94 \\
+            USAD~\cite{audibert2020usad} &64.51 &32.20 &42.96  \\
+            OmniAnomaly~\cite{audibert2020usad} &26.52 &97.99 &41.74 \\
+            IsolationForest~\cite{audibert2020usad} &62.41 &61.55 &61.98\\
+            Anomaly Transformer~\cite{energyefficient2025yang} & 79.86 & \textbf{100.00} & 88.86 \\
+            \midrule
+            \textbf{AEABA-CPS(ours)} & 94.22  & \textbf{100.00} & \textbf{97.02} \\
+            \bottomrule
+        \end{tabular}
+        }
+    \end{minipage}
+    \end{small}
+\end{table*}
+
+As shown in Table~\ref{tab: main_results}, the proposed AEABA-CPS framework with an ensemble size of 4 consistently outperforms existing baseline methods on both the SWaT and WADI datasets, demonstrating its effectiveness for anomaly detection in CPS security applications. In particular, AEABA-CPS achieves the highest $F_1$ scores of 97.86\% and 97.02\% on SWaT and WADI, respectively, indicating balanced performance between precision and recall. Compared with strong baselines such as Anomaly Transformer, the proposed method maintains competitive precision and significantly improves recall. Notably, AEABA-CPS attains a recall of 100.00\% on the WADI dataset, which is critical in CPS security scenarios where missing a single attack event may lead to severe safety risks or system failures. This recall indicates that all anomalous events are successfully identified, highlighting the robustness and reliability of the framework. Overall, these results validate that AEABA-CPS provides an effective solution for real-world CPS anomaly detection and attack identification.
+
+
+\paragraph{Resource Consumption Results}
+\begin{table*}  
+\centering
+\caption{Average computational resource consumption and anomaly detection performance of AEABA-CPS and ATE baseline deployed on edge devices using SWaT dataset.\label{tab: swat_computational_resource}}
+    \renewcommand\arraystretch{2}
+    \resizebox{\textwidth}{!}{
+	\begin{tabular}{ccccccccc}
+        \toprule
+       \textbf{Device}  
+        & \makecell[c]{\textbf{Deployment}} 
+       & \makecell[c]{\textbf{Process CPU} \\ \textbf{Util (\%)}} 
+       & \makecell[c]{\textbf{Process Memory} \\ \textbf{Usage (MB)}} 
+       & \makecell[c]{\textbf{CPU Temperature} \\ \textbf{($^{\circ}\mathrm{C}$)}}  
+       & \makecell[c]{\textbf{Inference Model} \\ \textbf{File Size (MB)}} 
+       & \makecell[c]{\textbf{Inference Power} \\ \textbf{(W)}} 
+       & \makecell[c]{\textbf{Inference Time} \\ \textbf{Per Sample(ms)}} 
+       & \makecell[c]{$F_{1}$ \textbf{score(\%)}} \\
+        \midrule
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{2}{*}{Jetson Orin Nano}     
+            & ATE  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable & Not Executable\\            
+            & AEABA-CPS  & 39.76 & 144.55 &  50.28  & 61.6 &  4.28  & 86.67 & 97.86 \\     
+
+        \specialrule{0em}{1pt}{1pt}
+        \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{2}{*}{Raspberry Pi 5} 
+
+            & ATE  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable & Not Executable\\
+
+            & AEABA-CPS  & 64.11 & 143.73 & 73.64  & 61.6 & 3.31 & 217.66 & 97.85\\            
+        \specialrule{0em}{1pt}{1pt}
+        \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{2}{*}{Raspberry Pi 4B} 
+            & ATE  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable & Not Executable\\
+            & AEABA-CPS  & 72.48 & 142.98 & 65.73 & 61.6 & 3.06 & 298.63 & 97.85\\         
+        \specialrule{0em}{1pt}{1pt}
+         \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{2}{*}{Raspberry Pi 3B+}     
+            & ATE  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable & Not Executable\\
+           & AEABA-CPS  & 85.46 & 141.88 & 58.95  & 61.6 & 2.88 & 513.33 & 97.84\\        
+        \specialrule{0em}{1pt}{1pt} 
+        \bottomrule
+    \end{tabular}
+   }
+\end{table*}
+
+\begin{table*}   
+\centering
+\caption{Average computational resource consumption and anomaly detection performance of AEABA-CPS and ATE baseline deployed on edge devices using WADI dataset.\label{tab: wadi_computational_resource}}
+    \renewcommand\arraystretch{2}
+    \resizebox{\textwidth}{!}{
+	\begin{tabular}{ccccccccc}
+        \toprule
+       \textbf{Device}  
+       & \makecell[c]{\textbf{Deployment}} 
+       & \makecell[c]{\textbf{Process CPU} \\ \textbf{Util (\%)}} 
+       & \makecell[c]{\textbf{Process Memory} \\ \textbf{Usage (MB)}} 
+       & \makecell[c]{\textbf{CPU Temperature} \\ \textbf{($^{\circ}\mathrm{C}$)}}  
+       & \makecell[c]{\textbf{Inference Model} \\ \textbf{File Size (MB)}} 
+       & \makecell[c]{\textbf{Inference Power} \\ \textbf{(W)}} 
+       & \makecell[c]{\textbf{Inference Time} \\ \textbf{Per Sample(ms)}} 
+       & \makecell[c]{$F_{1}$ \textbf{score(\%)}} \\
+        \midrule
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{2}{*}{Jetson Orin Nano}   
+            & ATE  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable & Not Executable\\
+            
+            & AEABA-CPS  & 40.50 & 165.06 &  50.52  & 62.4 & 4.33 & 88.53 & 97.02\\  
+        \specialrule{0em}{1pt}{1pt}
+        \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{2}{*}{Raspberry Pi 5} 
+            & ATE  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable & Not Executable\\
+
+            & AEABA-CPS  & 64.87 & 161.23 & 75.24  & 62.4 &  3.55  & 219.82 & 97.01\\            
+        \specialrule{0em}{1pt}{1pt}
+        \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{2}{*}{Raspberry Pi 4B}     
+            & ATE  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable & Not Executable\\
+            
+            & AEABA-CPS  & 72.74 & 160.89 & 66.22  & 62.4 & 3.15 & 303.45 & 97.01\\         
+        \specialrule{0em}{1pt}{1pt}
+         \hline
+        \specialrule{0em}{1pt}{1pt}
+        \multirow[m]{2}{*}{Raspberry Pi 3B+}     
+            & ATE  & Not Executable & Not Executable & Not Executable & Not Executable & Not Executable  & Not Executable & Not Executable\\
+            
+            & AEABA-CPS  & 86.38 & 157.27 & 61.22  & 62.4 &  2.93  & 523.02 & 97.00\\        
+        \specialrule{0em}{1pt}{1pt} 
+        \bottomrule 
+    \end{tabular}
+   }
+\end{table*}
+As shown in Tables~\ref{tab: swat_computational_resource} and~\ref{tab: wadi_computational_resource}, the ATE baseline fails to execute on any of the evaluated edge devices across both the SWaT and WADI datasets, making it infeasible for edge deployment. In contrast, AEABA-CPS runs successfully on all four devices, demonstrating portability across heterogeneous edge hardware. On the SWaT dataset, AEABA-CPS achieves a consistent $F_1$ score of approximately 97.85\% across all devices, with inference times ranging from 86.67ms on the Jetson Orin Nano to 513.33ms on the Raspberry Pi 3B+, and model file sizes of only 61.6MB. Similar results are observed on the WADI dataset, where AEABA-CPS maintains an $F_1$ score of around 97.01\% while incurring memory footprints between 157.27MB and 165.06MB.
+
+These results highlight the favorable accuracy-cost trade-off offered by AEABA-CPS. Even on the most resource-constrained device (Raspberry Pi 3B+), CPU utilization remains below 87\% and power consumption stays under 3W on both datasets, while the $F_1$ score degrades by less than 0.02 percentage points compared to the more capable Jetson Orin Nano. This near-lossless detection performance across devices with very different computational capacities supports the efficiency of AEABA-CPS and its suitability for practical anomaly detection and attack identification in resource-limited cyber-physical system environments.
+
+
+
+
+
+\section{Conclusion}
+This paper presented AEABA-CPS, a unified edge intelligence pipeline designed to deliver continuous, real-time anomaly detection and analysis on power-constrained CPS nodes. At its core, ATE uses bootstrap-resampled data partitions and majority-vote aggregation to strengthen detection robustness against sensor noise and distributional shift, while its quantized counterpart, Quan\_ATE, uses the ExecuTorch-XNNPACK execution stack to suppress on-chip memory traffic and arithmetic switching activity, directly reducing dynamic power consumption during sustained inference. A downstream Transformer-based classifier further enables on-device attribution of detected anomalies to specific attack categories, allowing targeted mitigation strategies to be applied without offloading computation to centralized infrastructure. Evaluation on the SWaT and WADI benchmarks yielded $F_1$ scores of 97.86\% and 97.02\%, respectively, while power measurements on the target edge platform confirmed that high detection fidelity and strict energy efficiency are simultaneously attainable, demonstrating the practical readiness of AEABA-CPS for unattended, device-side security monitoring in resource-limited CPS deployments.
+
+\bibliographystyle{sn-mathphys-num}
+\bibliography{sn-bibliography}
+
+
+\end{document}
